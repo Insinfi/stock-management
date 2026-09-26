@@ -35,6 +35,10 @@ const translations = {
     syncCount: "Sync {count}",
     sync: "↻ Sync",
     searchPlaceholder: "Search name or barcode",
+    productSearch: "Find an article",
+    productSearchPlaceholder: "Search by product name",
+    noArticlesFound: "No articles match your search.",
+    selectArticle: "Select article",
     localNote: "Your stock is saved on this device. Connect a Google Sheet to sync across devices.",
     newArticle: "NEW ARTICLE",
     barcodeUnknown: "Barcode not recognized",
@@ -133,6 +137,10 @@ const translations = {
     syncCount: "Synchroniser ({count})",
     sync: "↻ Synchroniser",
     searchPlaceholder: "Rechercher par nom ou code-barres",
+    productSearch: "Rechercher un article",
+    productSearchPlaceholder: "Rechercher par nom de produit",
+    noArticlesFound: "Aucun article ne correspond à votre recherche.",
+    selectArticle: "Sélectionner l’article",
     localNote: "Votre stock est enregistré sur cet appareil. Connectez une feuille Google pour synchroniser vos appareils.",
     newArticle: "NOUVEL ARTICLE",
     barcodeUnknown: "Code-barres inconnu",
@@ -227,6 +235,7 @@ let articles: Article[] = [];
 let pendingCommands: StockCommand[] = [];
 let screen: Screen = "stock";
 let search = "";
+let scanSearch = "";
 let selectedBarcode = "";
 let notice = "";
 let syncing = false;
@@ -395,6 +404,26 @@ function renderSelection(): string {
 }
 
 function renderScanScreen(): string {
+  const matchingArticles = articles
+    .filter((article) =>
+      `${article.name} ${article.barcode}`.toLocaleLowerCase(language === "fr" ? "fr-FR" : "en-US")
+        .includes(scanSearch.trim().toLocaleLowerCase(language === "fr" ? "fr-FR" : "en-US"))
+    )
+    .sort((a, b) => a.name.localeCompare(b.name, language === "fr" ? "fr" : "en"));
+  const searchResults = scanSearch.trim()
+    ? matchingArticles.length
+      ? `<div class="scan-results" role="list">
+          ${matchingArticles.map((article) => `
+            <button class="scan-result" type="button" role="listitem" data-action="select-article" data-barcode="${escapeHtml(article.barcode)}" aria-label="${t("selectArticle")}: ${escapeHtml(article.name)}">
+              <span class="scan-result-icon" aria-hidden="true">${escapeHtml(article.name.slice(0, 1).toLocaleUpperCase(language === "fr" ? "fr-FR" : "en-US"))}</span>
+              <span class="scan-result-info"><strong>${escapeHtml(article.name)}</strong><small>${escapeHtml(article.barcode)}</small></span>
+              <span class="scan-result-quantity">${formatNumber(article.quantity)} ${t("units")}</span>
+            </button>
+          `).join("")}
+        </div>`
+      : `<p class="scan-search-empty">${t("noArticlesFound")}</p>`
+    : "";
+
   return `
     <section class="screen" aria-labelledby="scan-heading">
       <div class="screen-heading">
@@ -405,6 +434,13 @@ function renderScanScreen(): string {
         <span class="scan-step">01 <i></i> 02</span>
       </div>
       ${!selectedBarcode ? `
+        <label class="scan-search-box">
+          <span aria-hidden="true">⌕</span>
+          <span class="scan-search-label">${t("productSearch")}</span>
+          <input type="search" name="scanSearch" value="${escapeHtml(scanSearch)}" placeholder="${t("productSearchPlaceholder")}" autocomplete="off" />
+        </label>
+        ${searchResults}
+        ${scanSearch.trim() ? "" : `
         <div class="scanner-card">
           <div class="camera-frame">
             <video id="scanner-video" muted playsinline></video>
@@ -419,6 +455,7 @@ function renderScanScreen(): string {
             <button class="primary-button" type="submit">${t("findArticle")}</button>
           </form>
         </div>
+        `}
       ` : renderSelection()}
       <div class="scan-tip"><span aria-hidden="true">✳</span><p><strong>${t("worksOffline")}</strong><br />${t("offlineQueueHint")}</p></div>
     </section>
@@ -450,10 +487,13 @@ function render(): void {
   document.documentElement.lang = language;
   document.title = t("documentTitle");
   document.querySelector<HTMLMetaElement>('meta[name="description"]')?.setAttribute("content", t("description"));
-  const searchHasFocus =
-    document.activeElement instanceof HTMLInputElement && document.activeElement.name === "search";
+  const focusedSearchName =
+    document.activeElement instanceof HTMLInputElement &&
+    (document.activeElement.name === "search" || document.activeElement.name === "scanSearch")
+      ? document.activeElement.name
+      : "";
   const searchCursor =
-    searchHasFocus && document.activeElement instanceof HTMLInputElement
+    focusedSearchName && document.activeElement instanceof HTMLInputElement
       ? document.activeElement.selectionStart
       : null;
   const current = screen === "stock" ? renderStockScreen() : renderScanScreen();
@@ -484,8 +524,10 @@ function render(): void {
       ${document.querySelector(".settings-dialog") ? renderSettings() : ""}
     </div>
   `;
-  const searchInput = appRoot.querySelector<HTMLInputElement>('input[name="search"]');
-  if (searchInput && searchHasFocus) {
+  const searchInput = focusedSearchName
+    ? appRoot.querySelector<HTMLInputElement>(`input[name="${focusedSearchName}"]`)
+    : null;
+  if (searchInput) {
     searchInput.focus();
     const cursor = searchCursor ?? searchInput.value.length;
     searchInput.setSelectionRange(cursor, cursor);
@@ -677,10 +719,15 @@ async function handleClick(event: MouseEvent): Promise<void> {
   } else if (action === "settings") {
     renderSettingsDialog();
   } else if (action === "language") {
+    scanner.stop();
     language = language === "en" ? "fr" : "en";
     localStorage.setItem(LANGUAGE_KEY, language);
     notice = "";
     render();
+    if (screen === "scan" && !selectedBarcode && !scanSearch.trim()) void startScanner();
+  } else if (action === "select-article") {
+    const barcode = target.closest<HTMLElement>("[data-barcode]")?.dataset.barcode;
+    if (barcode) selectBarcode(barcode);
   } else if (action === "close-settings") {
     if (target === appRoot.querySelector(".dialog-backdrop") || target.closest(".dialog-close")) {
       removeSettingsDialog();
@@ -738,6 +785,11 @@ appRoot.addEventListener("input", (event) => {
   if (target instanceof HTMLInputElement && target.name === "search") {
     search = target.value;
     render();
+  } else if (target instanceof HTMLInputElement && target.name === "scanSearch") {
+    scanSearch = target.value;
+    scanner.stop();
+    render();
+    if (!scanSearch.trim()) void startScanner();
   }
 });
 window.addEventListener("online", () => {

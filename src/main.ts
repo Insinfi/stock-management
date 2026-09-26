@@ -332,6 +332,42 @@ function statusLabel(): string {
   return t("online");
 }
 
+function isLiveScannerScreen(): boolean {
+  return screen === "scan" && !selectedBarcode && !creatingArticle && !scanSearch.trim();
+}
+
+function updateNotice(): void {
+  const currentNotice = appRoot.querySelector<HTMLElement>(".notice");
+  if (!notice) {
+    currentNotice?.remove();
+    return;
+  }
+
+  const markup = `<div class="notice" role="status">${escapeHtml(notice)}<button type="button" data-action="dismiss-notice" aria-label="${t("dismissNotice")}">×</button></div>`;
+  if (currentNotice) {
+    currentNotice.outerHTML = markup;
+  } else {
+    appRoot.querySelector("main")?.insertAdjacentHTML("beforebegin", markup);
+  }
+}
+
+function updateSyncStatus(): void {
+  const status = appRoot.querySelector<HTMLElement>(".sync-status");
+  if (!status) return;
+  status.classList.toggle("is-online", navigator.onLine);
+  status.classList.toggle("is-offline", !navigator.onLine);
+  status.querySelector("span:last-child")?.replaceChildren(statusLabel());
+}
+
+function renderSyncUpdate(): void {
+  if (!isLiveScannerScreen()) {
+    render();
+    return;
+  }
+  updateSyncStatus();
+  updateNotice();
+}
+
 function renderArticle(article: Article): string {
   const low = article.quantity <= 5;
   return `
@@ -631,7 +667,7 @@ async function synchronize(): Promise<void> {
   syncing = true;
   syncRequested = false;
   notice = "";
-  render();
+  renderSyncUpdate();
   try {
     const api = selectedApi();
     const queue = await getQueue();
@@ -651,7 +687,7 @@ async function synchronize(): Promise<void> {
     await refreshLocalData();
   } finally {
     syncing = false;
-    render();
+    renderSyncUpdate();
     if (syncRequested) void synchronize();
   }
 }
@@ -1008,7 +1044,8 @@ async function handleClick(event: MouseEvent): Promise<void> {
     window.print();
   } else if (action === "dismiss-notice") {
     notice = "";
-    render();
+    if (isLiveScannerScreen()) updateNotice();
+    else render();
   } else if (action === "install" && installPrompt) {
     await installPrompt.prompt();
     installPrompt = undefined;
@@ -1072,7 +1109,8 @@ appRoot.addEventListener("input", (event) => {
   }
 });
 window.addEventListener("online", () => {
-  render();
+  if (isLiveScannerScreen()) updateSyncStatus();
+  else render();
   void synchronize();
 });
 window.addEventListener("offline", render);

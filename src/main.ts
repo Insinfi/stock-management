@@ -1,5 +1,7 @@
 import { StockApi } from "./api";
 import {
+  commitArticleDelete,
+  commitArticleUpdate,
   commitMovement,
   commitNewArticle,
   getArticles,
@@ -44,11 +46,20 @@ const translations = {
     barcodeUnknown: "Barcode not recognized",
     barcode: "Barcode",
     articleName: "Article name",
+    editStock: "Adjust",
+    adjustArticleStock: "Adjust stock for {name}",
     startingQuantity: "Starting quantity",
     newArticlePlaceholder: "e.g. Storage box, medium",
     createArticle: "Create article",
     cancel: "Cancel",
     articleFound: "ARTICLE FOUND",
+    editArticle: "Edit name / barcode",
+    saveArticleChanges: "Save changes",
+    deleteArticle: "Delete article",
+    deleteArticleConfirm: "Permanently delete {name} from your stock? This cannot be undone.",
+    articleUpdated: "{name} updated.",
+    articleDeleted: "{name} deleted.",
+    duplicateBarcode: "Another article already uses this barcode.",
     currentStock: "Current stock",
     units: "units",
     movementType: "Movement type",
@@ -85,6 +96,7 @@ const translations = {
     installApp: "＋ Install app",
     connectFirst: "Connect a Google Sheet first.",
     barcodeTooLong: "This barcode is too long to save.",
+    invalidBarcode: "Enter a barcode.",
     wholeNumber: "Enter a whole number for the quantity.",
     articleNameRequired: "Enter an article name.",
     startingQuantityNegative: "Starting quantity cannot be negative.",
@@ -146,11 +158,20 @@ const translations = {
     barcodeUnknown: "Code-barres inconnu",
     barcode: "Code-barres",
     articleName: "Nom de l’article",
+    editStock: "Modifier",
+    adjustArticleStock: "Modifier le stock de {name}",
     startingQuantity: "Quantité initiale",
     newArticlePlaceholder: "ex. Boîte de rangement, moyenne",
     createArticle: "Créer l’article",
     cancel: "Annuler",
     articleFound: "ARTICLE TROUVÉ",
+    editArticle: "Modifier le nom / code-barres",
+    saveArticleChanges: "Enregistrer",
+    deleteArticle: "Supprimer l’article",
+    deleteArticleConfirm: "Supprimer définitivement {name} de votre stock ? Cette action est irréversible.",
+    articleUpdated: "{name} a été modifié.",
+    articleDeleted: "{name} a été supprimé.",
+    duplicateBarcode: "Un autre article utilise déjà ce code-barres.",
     currentStock: "Stock actuel",
     units: "unités",
     movementType: "Type de mouvement",
@@ -187,6 +208,7 @@ const translations = {
     installApp: "＋ Installer l’application",
     connectFirst: "Connectez d’abord une feuille Google.",
     barcodeTooLong: "Ce code-barres est trop long pour être enregistré.",
+    invalidBarcode: "Saisissez un code-barres.",
     wholeNumber: "Saisissez un nombre entier pour la quantité.",
     articleNameRequired: "Saisissez le nom de l’article.",
     startingQuantityNegative: "La quantité initiale ne peut pas être négative.",
@@ -237,6 +259,8 @@ let screen: Screen = "stock";
 let search = "";
 let scanSearch = "";
 let selectedBarcode = "";
+let editingArticle = false;
+let articleDraft: { name: string; barcode: string } | undefined;
 let notice = "";
 let syncing = false;
 let syncRequested = false;
@@ -297,6 +321,9 @@ function renderArticle(article: Article): string {
         <strong>${formatNumber(article.quantity)}</strong>
         <span>${t("inStock")}</span>
       </div>
+      <button class="article-edit-button" type="button" data-action="edit-stock" data-barcode="${escapeHtml(article.barcode)}" aria-label="${escapeHtml(t("adjustArticleStock", { name: article.name }))}" title="${escapeHtml(t("adjustArticleStock", { name: article.name }))}">
+        <span aria-hidden="true">±</span><span>${t("editStock")}</span>
+      </button>
     </article>
   `;
 }
@@ -374,11 +401,31 @@ function renderSelection(): string {
       </form>
     `;
   }
+  if (editingArticle) {
+    return `
+      <form class="entry-card" data-form="edit-article">
+        <div class="entry-heading">
+          <div class="entry-icon">✎</div>
+          <div><p class="eyebrow">${t("articleFound")}</p><h2>${escapeHtml(article.name)}</h2></div>
+        </div>
+        <label class="field-label">${t("articleName")}
+          <input name="name" required maxlength="120" value="${escapeHtml(articleDraft?.name ?? article.name)}" />
+        </label>
+        <label class="field-label">${t("barcode")}
+          <input name="barcode" required maxlength="160" value="${escapeHtml(articleDraft?.barcode ?? article.barcode)}" />
+        </label>
+        <button class="primary-button" type="submit">${t("saveArticleChanges")}</button>
+        <button class="secondary-button" type="button" data-action="cancel-article-edit">${t("cancel")}</button>
+        <button class="danger-button" type="button" data-action="delete-article" data-barcode="${escapeHtml(article.barcode)}">${t("deleteArticle")}</button>
+      </form>
+    `;
+  }
   return `
     <form class="entry-card" data-form="movement">
       <div class="entry-heading">
         <div class="entry-icon">▦</div>
         <div><p class="eyebrow">${t("articleFound")}</p><h2>${escapeHtml(article.name)}</h2></div>
+        <button class="detail-edit-button" type="button" data-action="edit-article" aria-label="${escapeHtml(t("editArticle"))}">✎ ${t("editArticle")}</button>
       </div>
       <p class="barcode-display">${t("barcode")} <strong>${escapeHtml(article.barcode)}</strong></p>
       <div class="current-stock"><span>${t("currentStock")}</span><strong>${formatNumber(article.quantity)} <small>${t("units")}</small></strong></div>
@@ -399,6 +446,7 @@ function renderSelection(): string {
       </label>
       <button class="primary-button" type="submit">${t("confirmMovement")} <span aria-hidden="true">→</span></button>
       <button class="secondary-button" type="button" data-action="cancel-selection">${t("scanAnother")}</button>
+      <button class="danger-button" type="button" data-action="delete-article" data-barcode="${escapeHtml(article.barcode)}">${t("deleteArticle")}</button>
     </form>
   `;
 }
@@ -586,6 +634,7 @@ function selectBarcode(barcode: string): void {
     render();
     return;
   }
+  editingArticle = false;
   scanner.stop();
   notice = "";
   render();
@@ -668,6 +717,72 @@ async function recordMovement(form: HTMLFormElement): Promise<void> {
   void synchronize();
 }
 
+async function updateArticle(form: HTMLFormElement): Promise<void> {
+  const original = articles.find((item) => item.barcode === selectedBarcode);
+  if (!original) throw new Error(t("articleMissing"));
+  const fields = new FormData(form);
+  const name = String(fields.get("name") ?? "").trim();
+  const barcode = String(fields.get("barcode") ?? "").trim();
+  if (!name) throw new Error(t("articleNameRequired"));
+  if (!barcode) throw new Error(t("invalidBarcode"));
+  if (barcode.length > 160) throw new Error(t("barcodeTooLong"));
+  const duplicate = articles.find(
+    (item) => item.barcode === barcode && item.barcode !== original.barcode
+  );
+  if (duplicate) throw new Error(t("duplicateBarcode"));
+  const updated: Article = {
+    ...original,
+    barcode,
+    name,
+    updatedAt: new Date().toISOString()
+  };
+  const command: StockCommand = {
+    id: crypto.randomUUID(),
+    kind: "update",
+    previousBarcode: original.barcode,
+    barcode,
+    name,
+    createdAt: updated.updatedAt
+  };
+  try {
+    await commitArticleUpdate(original.barcode, updated, command);
+  } catch (error) {
+    if (error instanceof Error && error.message === "An article with this barcode already exists.") {
+      throw new Error(t("duplicateBarcode"));
+    }
+    throw error;
+  }
+  await refreshLocalData();
+  selectedBarcode = "";
+  editingArticle = false;
+  articleDraft = undefined;
+  screen = "stock";
+  notice = t("articleUpdated", { name });
+  render();
+  void synchronize();
+}
+
+async function deleteArticle(barcode: string): Promise<void> {
+  const article = articles.find((item) => item.barcode === barcode);
+  if (!article) throw new Error(t("articleMissing"));
+  if (!window.confirm(t("deleteArticleConfirm", { name: article.name }))) return;
+  const command: StockCommand = {
+    id: crypto.randomUUID(),
+    kind: "delete",
+    barcode: article.barcode,
+    createdAt: new Date().toISOString()
+  };
+  await commitArticleDelete(article.barcode, command);
+  await refreshLocalData();
+  selectedBarcode = "";
+  editingArticle = false;
+  articleDraft = undefined;
+  screen = "stock";
+  notice = t("articleDeleted", { name: article.name });
+  render();
+  void synchronize();
+}
+
 async function handleSubmit(event: SubmitEvent): Promise<void> {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
@@ -681,6 +796,8 @@ async function handleSubmit(event: SubmitEvent): Promise<void> {
       await createArticle(form);
     } else if (kind === "movement") {
       await recordMovement(form);
+    } else if (kind === "edit-article") {
+      await updateArticle(form);
     } else if (kind === "settings") {
       const input = form.querySelector<HTMLInputElement>('input[name="endpoint"]');
       const value = input?.value.trim() ?? "";
@@ -711,6 +828,8 @@ async function handleClick(event: MouseEvent): Promise<void> {
     scanner.stop();
     screen = action;
     selectedBarcode = "";
+    editingArticle = false;
+    articleDraft = undefined;
     notice = "";
     render();
     if (screen === "scan") void startScanner();
@@ -728,6 +847,37 @@ async function handleClick(event: MouseEvent): Promise<void> {
   } else if (action === "select-article") {
     const barcode = target.closest<HTMLElement>("[data-barcode]")?.dataset.barcode;
     if (barcode) selectBarcode(barcode);
+  } else if (action === "edit-article") {
+    const article = articles.find((item) => item.barcode === selectedBarcode);
+    if (!article) return;
+    articleDraft = { name: article.name, barcode: article.barcode };
+    editingArticle = true;
+    render();
+  } else if (action === "cancel-article-edit") {
+    editingArticle = false;
+    articleDraft = undefined;
+    render();
+  } else if (action === "delete-article") {
+    const barcode = target.closest<HTMLElement>("[data-barcode]")?.dataset.barcode;
+    if (barcode) {
+      try {
+        await deleteArticle(barcode);
+      } catch (error) {
+        notice = error instanceof Error ? error.message : t("saveFailed");
+        render();
+      }
+    }
+  } else if (action === "edit-stock") {
+    const barcode = target.closest<HTMLElement>("[data-barcode]")?.dataset.barcode;
+    if (barcode) {
+      scanner.stop();
+      selectedBarcode = barcode;
+      editingArticle = false;
+      articleDraft = undefined;
+      screen = "scan";
+      notice = "";
+      render();
+    }
   } else if (action === "close-settings") {
     if (target === appRoot.querySelector(".dialog-backdrop") || target.closest(".dialog-close")) {
       removeSettingsDialog();
@@ -740,6 +890,8 @@ async function handleClick(event: MouseEvent): Promise<void> {
     render();
   } else if (action === "cancel-selection") {
     selectedBarcode = "";
+    editingArticle = false;
+    articleDraft = undefined;
     render();
     void startScanner();
   } else if (action === "dismiss-notice") {
@@ -790,6 +942,14 @@ appRoot.addEventListener("input", (event) => {
     scanner.stop();
     render();
     if (!scanSearch.trim()) void startScanner();
+  } else if (target instanceof HTMLInputElement && target.name === "name" && editingArticle) {
+    articleDraft = { name: target.value, barcode: articleDraft?.barcode ?? selectedBarcode };
+  } else if (target instanceof HTMLInputElement && target.name === "barcode" && editingArticle) {
+    const article = articles.find((item) => item.barcode === selectedBarcode);
+    articleDraft = {
+      name: articleDraft?.name ?? article?.name ?? "",
+      barcode: target.value
+    };
   }
 });
 window.addEventListener("online", () => {

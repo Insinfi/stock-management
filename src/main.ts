@@ -81,6 +81,9 @@ const translations = {
     scanMove: "Scan & move",
     pointBarcode: "Point at a barcode",
     scanHint: "Hold the barcode steady inside the frame. It will scan automatically.",
+    flashOff: "Flash off",
+    flashOn: "Flash on",
+    flashFailed: "Could not toggle the flash: {error}",
     orEnterManually: "or enter manually",
     enterBarcode: "Enter barcode",
     barcodePlaceholder: "Type or paste a barcode",
@@ -200,6 +203,9 @@ const translations = {
     scanMove: "Scanner et gérer",
     pointBarcode: "Visez un code-barres",
     scanHint: "Maintenez le code-barres dans le cadre. Il sera scanné automatiquement.",
+    flashOff: "Flash désactivé",
+    flashOn: "Flash activé",
+    flashFailed: "Impossible de changer le flash : {error}",
     orEnterManually: "ou saisir manuellement",
     enterBarcode: "Saisir le code-barres",
     barcodePlaceholder: "Saisir ou coller un code-barres",
@@ -516,6 +522,7 @@ function renderScanScreen(): string {
           <div class="camera-frame">
             <video id="scanner-video" muted playsinline></video>
             <div class="camera-overlay" aria-hidden="true"><span></span></div>
+            <button class="flash-button" type="button" data-action="toggle-flash" aria-pressed="false" hidden>⚡ ${t("flashOff")}</button>
             <div class="camera-caption"><span class="live-dot"></span> ${t("pointBarcode")}</div>
           </div>
           <p class="scanner-hint">${t("scanHint")}</p>
@@ -853,13 +860,37 @@ async function handleSubmit(event: SubmitEvent): Promise<void> {
   }
 }
 
+function updateFlashButton(): void {
+  const button = appRoot.querySelector<HTMLButtonElement>('[data-action="toggle-flash"]');
+  if (!button) return;
+  button.hidden = !scanner.supportsTorch;
+  button.setAttribute("aria-pressed", String(scanner.isTorchEnabled));
+  button.textContent = `⚡ ${t(scanner.isTorchEnabled ? "flashOn" : "flashOff")}`;
+}
+
 async function handleClick(event: MouseEvent): Promise<void> {
   const target = event.target;
   if (!(target instanceof Element)) return;
   const action = target.closest<HTMLElement>("[data-action]")?.dataset.action;
   if (!action) return;
 
-  if (action === "stock" || action === "scan") {
+  if (action === "toggle-flash") {
+    const button = target.closest<HTMLButtonElement>('[data-action="toggle-flash"]');
+    if (!button) return;
+    button.disabled = true;
+    try {
+      await scanner.setTorch(!scanner.isTorchEnabled);
+      updateFlashButton();
+    } catch (error) {
+      const hint = appRoot.querySelector<HTMLElement>(".scanner-hint");
+      if (hint) {
+        const message = error instanceof Error ? error.message : t("cameraUnavailableFallback");
+        hint.textContent = t("flashFailed", { error: message });
+      }
+    } finally {
+      button.disabled = false;
+    }
+  } else if (action === "stock" || action === "scan") {
     scanner.stop();
     screen = action;
     selectedBarcode = "";
@@ -1001,6 +1032,7 @@ async function startScanner(): Promise<void> {
   if (!video || selectedBarcode) return;
   try {
     await scanner.start(video, selectBarcode);
+    updateFlashButton();
   } catch (error) {
     scanner.stop();
     notice =

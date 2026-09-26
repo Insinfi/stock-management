@@ -2,6 +2,9 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  server: {
+    allowedHosts: ["01e9-94-106-224-120.ngrok-free.app"]
+  },
   plugins: [
     VitePWA({
       registerType: "autoUpdate",

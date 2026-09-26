@@ -61,9 +61,16 @@ function applyCommand_(command) {
   const articles = getSheet_("Articles", ARTICLE_HEADERS);
   const movements = getSheet_("Movements", MOVEMENT_HEADERS);
 
-  if (hasMovement_(movements, command.id)) return true;
+  if (hasMovement_(movements, command.id)) {
+    if (command.kind === "delete") {
+      const deletedRow = findArticleRow_(articles, command.barcode);
+      if (deletedRow >= 2) articles.deleteRow(deletedRow);
+    }
+    return true;
+  }
 
-  const rowNumber = findArticleRow_(articles, command.barcode);
+  const lookupBarcode = command.kind === "update" ? command.previousBarcode : command.barcode;
+  let rowNumber = findArticleRow_(articles, lookupBarcode);
   const timestamp = new Date(command.createdAt);
   let articleName;
   let movementType;
@@ -87,7 +94,7 @@ function applyCommand_(command) {
       delta = quantity;
       articles.appendRow([command.barcode, articleName, quantity, timestamp, command.id]);
     }
-  } else {
+  } else if (command.kind === "movement") {
     if (rowNumber < 2) throw new Error("This barcode is not registered in the stock sheet.");
     const row = articles.getRange(rowNumber, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
     articleName = String(row[1]);
@@ -106,6 +113,39 @@ function applyCommand_(command) {
       }
       articles.getRange(rowNumber, 3, 1, 3).setValues([[nextQuantity, timestamp, command.id]]);
     }
+  } else if (command.kind === "update") {
+    if (rowNumber < 2) {
+      rowNumber = findArticleRow_(articles, command.barcode);
+      if (rowNumber < 2) throw new Error("This article is not registered in the stock sheet.");
+      const current = articles.getRange(rowNumber, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
+      if (String(current[4]) !== command.id) {
+        throw new Error("This article changed before the update could be applied.");
+      }
+      articleName = String(current[1]);
+    } else {
+      const current = articles.getRange(rowNumber, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
+      const targetRow = findArticleRow_(articles, command.barcode);
+      if (targetRow >= 2 && targetRow !== rowNumber) {
+        throw new Error("An article with this barcode already exists.");
+      }
+      articleName = command.name.trim();
+      articles.getRange(rowNumber, 1, 1, ARTICLE_HEADERS.length).setValues([
+        [command.barcode, articleName, Number(current[2]) || 0, timestamp, command.id]
+      ]);
+    }
+    movementType = "edit";
+    quantity = 0;
+    delta = 0;
+  } else if (command.kind === "delete") {
+    if (rowNumber < 2) throw new Error("This article is not registered in the stock sheet.");
+    const current = articles.getRange(rowNumber, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
+    articleName = String(current[1]);
+    quantity = Number(current[2]) || 0;
+    movementType = "delete";
+    delta = -quantity;
+    movements.appendRow([command.id, timestamp, command.barcode, articleName, movementType, quantity, delta]);
+    articles.deleteRow(rowNumber);
+    return true;
   }
 
   if (!hasMovement_(movements, command.id)) {
@@ -121,10 +161,10 @@ function validateCommand_(command) {
   if (!String(command.barcode || "").trim() || String(command.barcode).length > 160) {
     throw new Error("Invalid barcode.");
   }
-  if (!Number.isSafeInteger(command.quantity) || command.quantity < 0) {
-    throw new Error("Quantity must be a non-negative whole number.");
-  }
   if (command.kind === "create") {
+    if (!Number.isSafeInteger(command.quantity) || command.quantity < 0) {
+      throw new Error("Quantity must be a non-negative whole number.");
+    }
     if (!String(command.name || "").trim() || String(command.name).length > 120) {
       throw new Error("Article name is required.");
     }
@@ -133,9 +173,28 @@ function validateCommand_(command) {
     }
     return;
   }
+  if (command.kind === "update") {
+    if (!String(command.previousBarcode || "").trim() || String(command.previousBarcode).length > 160) {
+      throw new Error("Invalid existing barcode.");
+    }
+    if (!String(command.name || "").trim() || String(command.name).length > 120) {
+      throw new Error("Article name is required.");
+    }
+    if (!command.createdAt || isNaN(new Date(command.createdAt).getTime())) {
+      throw new Error("Invalid update date.");
+    }
+    return;
+  }
+  if (command.kind === "delete") {
+    if (!command.createdAt || isNaN(new Date(command.createdAt).getTime())) {
+      throw new Error("Invalid deletion date.");
+    }
+    return;
+  }
   if (
     command.kind !== "movement" ||
     (command.movementType !== "add" && command.movementType !== "remove") ||
+    !Number.isSafeInteger(command.quantity) ||
     command.quantity < 1 ||
     !command.createdAt ||
     isNaN(new Date(command.createdAt).getTime())

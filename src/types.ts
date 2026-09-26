@@ -21,6 +21,20 @@ export type StockCommand =
       movementType: "add" | "remove";
       quantity: number;
       createdAt: string;
+    }
+  | {
+      id: string;
+      kind: "update";
+      previousBarcode: string;
+      barcode: string;
+      name: string;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      kind: "delete";
+      barcode: string;
+      createdAt: string;
     };
 
 export interface ApiResult<T> {

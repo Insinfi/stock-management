@@ -15,12 +15,12 @@ Camera access and PWA installation require HTTPS (or `localhost` during developm
 ## Connect a Google Sheet
 
 1. Create a Google Sheet and open **Extensions → Apps Script**.
-2. Replace the editor contents with `apps-script/Code.gs`, then save. The script creates the `Articles` and `Movements` tabs and their headers during setup.
+2. Replace the editor contents with `apps-script/Code.gs`, then save. The script creates the `Articles` and `Movements` tabs and their headers during setup. If updating an existing deployment, choose **Deploy → Manage deployments**, edit it, select **New version**, and deploy so edits and deletions are supported by the server.
 3. In the Apps Script editor, select and run `setupStockroom` once, then approve the requested Sheets permission. This saves the spreadsheet ID so web-app requests can reopen it reliably.
 4. Select **Deploy → New deployment → Web app**. Choose an execution identity and restrict access to your account or organization whenever possible. Deploy and copy the URL ending in `/exec`.
 5. In Stockroom, open the gear icon, paste the deployment URL, and save. The app will sync when online; use **Sync** on the stock screen to retry or refresh.
 
-The `Articles` tab keeps the current quantity and last applied command ID. `Movements` is the append-only audit history, including opening quantities. Commands have stable IDs and the script serializes writes with a lock, so retrying a queued request does not apply it twice.
+The `Articles` tab keeps the current quantity and last applied command ID. `Movements` is the append-only audit history, including opening quantities, edits, and deletions. Commands have stable IDs and the script serializes writes with a lock, so retrying a queued request does not apply it twice.
 The PWA talks to Apps Script through a hidden iframe/form bridge, avoiding cross-origin `fetch` limitations on Apps Script responses.
 
 ### Access and data notes

@@ -151,6 +151,10 @@ h3 { font: 700 14px var(--sans-display); }
 .camera-overlay { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .camera-overlay span { position: relative; width: 74%; height: 91px; border: 1.5px solid #c8ebaa; border-radius: 11px; box-shadow: 0 0 0 500px #061b1755; }
 .camera-overlay span::after { position: absolute; top: 50%; right: 0; left: 0; height: 1px; background: #c8ebaa9e; content: ""; }
+.flash-button { position: absolute; z-index: 1; top: 10px; right: 10px; display: flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 11px; border: 1px solid #ffffff70; border-radius: 999px; background: #081815c9; color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
+.flash-button[aria-pressed="true"] { border-color: #c8ebaa; background: #c8ebaa; color: #122d29; }
+.flash-button:disabled { opacity: .65; cursor: wait; }
+.flash-button[hidden] { display: none; }
 .camera-caption { position: absolute; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; background: linear-gradient(transparent, #081815c9); color: #fff; font-size: 11px; }
 .live-dot { background: #b4e294; box-shadow: 0 0 0 4px #b4e29438; }
 .scanner-hint { margin: 14px 4px 18px; color: #7b8780; font-size: 12px; line-height: 1.55; text-align: center; }

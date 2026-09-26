@@ -45,6 +45,13 @@ const translations = {
     newArticle: "NEW ARTICLE",
     barcodeUnknown: "Barcode not recognized",
     barcode: "Barcode",
+    createHandmade: "Create a handmade article",
+    internalBarcodeInfo: "Generate an internal barcode and print a label to attach to this item.",
+    generateBarcode: "Generate barcode",
+    barcodeGenerationFailed: "Could not generate the barcode. Please try again.",
+    printLabel: "Print label",
+    internalBarcode: "Internal barcode",
+    barcodeNotGenerated: "Not generated yet",
     articleName: "Article name",
     editStock: "Adjust",
     adjustArticleStock: "Adjust stock for {name}",
@@ -157,6 +164,13 @@ const translations = {
     newArticle: "NOUVEL ARTICLE",
     barcodeUnknown: "Code-barres inconnu",
     barcode: "Code-barres",
+    createHandmade: "Créer un article fait main",
+    internalBarcodeInfo: "Générez un code-barres interne et imprimez une étiquette à coller sur cet article.",
+    generateBarcode: "Générer un code-barres",
+    barcodeGenerationFailed: "Impossible de générer le code-barres. Veuillez réessayer.",
+    printLabel: "Imprimer l’étiquette",
+    internalBarcode: "Code-barres interne",
+    barcodeNotGenerated: "Pas encore généré",
     articleName: "Nom de l’article",
     editStock: "Modifier",
     adjustArticleStock: "Modifier le stock de {name}",
@@ -259,6 +273,10 @@ let screen: Screen = "stock";
 let search = "";
 let scanSearch = "";
 let selectedBarcode = "";
+let creatingArticle = false;
+let generatedBarcode = false;
+let generatedBarcodeSvg = "";
+let creationDraft = { name: "", quantity: "0" };
 let editingArticle = false;
 let articleDraft: { name: string; barcode: string } | undefined;
 let notice = "";
@@ -381,20 +399,25 @@ function renderStockScreen(): string {
 
 function renderSelection(): string {
   const article = articles.find((item) => item.barcode === selectedBarcode);
-  if (!selectedBarcode) return "";
+  if (!selectedBarcode && !creatingArticle) return "";
   if (!article) {
     return `
       <form class="entry-card" data-form="create">
         <div class="entry-heading">
           <div class="entry-icon">＋</div>
-          <div><p class="eyebrow">${t("newArticle")}</p><h2>${t("barcodeUnknown")}</h2></div>
+          <div><p class="eyebrow">${t("newArticle")}</p><h2>${creatingArticle ? t("createHandmade") : t("barcodeUnknown")}</h2></div>
         </div>
-        <p class="barcode-display">${t("barcode")} <strong>${escapeHtml(selectedBarcode)}</strong></p>
+        <div class="generated-code-block">
+          <p class="barcode-display">${generatedBarcode ? t("internalBarcode") : t("barcode")} <strong>${escapeHtml(selectedBarcode || t("barcodeNotGenerated"))}</strong></p>
+          <p class="generated-code-hint">${t("internalBarcodeInfo")}</p>
+          <button class="secondary-button generate-code-button" type="button" data-action="generate-barcode">${t("generateBarcode")}</button>
+          ${generatedBarcode ? `<div class="print-label"><strong>${escapeHtml(creationDraft.name || t("createHandmade"))}</strong>${generatedBarcodeSvg}<small>${escapeHtml(selectedBarcode)}</small></div><button class="secondary-button print-label-button" type="button" data-action="print-label">${t("printLabel")}</button>` : ""}
+        </div>
         <label class="field-label">${t("articleName")}
-          <input name="name" required maxlength="120" placeholder="${t("newArticlePlaceholder")}" />
+          <input name="name" required maxlength="120" value="${escapeHtml(creationDraft.name)}" placeholder="${t("newArticlePlaceholder")}" />
         </label>
         <label class="field-label">${t("startingQuantity")}
-          <input name="quantity" type="number" min="0" step="1" value="0" required inputmode="numeric" />
+          <input name="quantity" type="number" min="0" step="1" value="${escapeHtml(creationDraft.quantity)}" required inputmode="numeric" />
         </label>
         <button class="primary-button" type="submit">${t("createArticle")}</button>
         <button class="secondary-button" type="button" data-action="cancel-selection">${t("cancel")}</button>
@@ -481,7 +504,7 @@ function renderScanScreen(): string {
         </div>
         <span class="scan-step">01 <i></i> 02</span>
       </div>
-      ${!selectedBarcode ? `
+      ${!selectedBarcode && !creatingArticle ? `
         <label class="scan-search-box">
           <span aria-hidden="true">⌕</span>
           <span class="scan-search-label">${t("productSearch")}</span>
@@ -502,6 +525,7 @@ function renderScanScreen(): string {
             <input id="manual-barcode" name="barcode" maxlength="160" placeholder="${t("barcodePlaceholder")}" autocomplete="off" required />
             <button class="primary-button" type="submit">${t("findArticle")}</button>
           </form>
+          <button class="secondary-button handmade-button" type="button" data-action="create-handmade">${t("createHandmade")}</button>
         </div>
         `}
       ` : renderSelection()}
@@ -634,6 +658,9 @@ function selectBarcode(barcode: string): void {
     render();
     return;
   }
+  creatingArticle = false;
+  generatedBarcode = false;
+  creationDraft = { name: "", quantity: "0" };
   editingArticle = false;
   scanner.stop();
   notice = "";
@@ -652,6 +679,7 @@ async function createArticle(form: HTMLFormElement): Promise<void> {
   const quantity = quantityInput(form);
   if (!name) throw new Error(t("articleNameRequired"));
   if (quantity < 0) throw new Error(t("startingQuantityNegative"));
+  if (!selectedBarcode) throw new Error(t("invalidBarcode"));
   const article: Article = {
     barcode: selectedBarcode,
     name,
@@ -669,6 +697,9 @@ async function createArticle(form: HTMLFormElement): Promise<void> {
   await commitNewArticle(article, command);
   await refreshLocalData();
   selectedBarcode = "";
+  creatingArticle = false;
+  generatedBarcode = false;
+  creationDraft = { name: "", quantity: "0" };
   screen = "stock";
   notice = t("articleAdded", { name });
   render();
@@ -793,6 +824,10 @@ async function handleSubmit(event: SubmitEvent): Promise<void> {
       const barcode = String(new FormData(form).get("barcode") ?? "").trim();
       if (barcode) selectBarcode(barcode);
     } else if (kind === "create") {
+      creationDraft = {
+        name: String(new FormData(form).get("name") ?? ""),
+        quantity: String(new FormData(form).get("quantity") ?? "0")
+      };
       await createArticle(form);
     } else if (kind === "movement") {
       await recordMovement(form);
@@ -828,6 +863,9 @@ async function handleClick(event: MouseEvent): Promise<void> {
     scanner.stop();
     screen = action;
     selectedBarcode = "";
+    creatingArticle = false;
+    generatedBarcode = false;
+    creationDraft = { name: "", quantity: "0" };
     editingArticle = false;
     articleDraft = undefined;
     notice = "";
@@ -872,6 +910,8 @@ async function handleClick(event: MouseEvent): Promise<void> {
     if (barcode) {
       scanner.stop();
       selectedBarcode = barcode;
+      creatingArticle = false;
+      generatedBarcode = false;
       editingArticle = false;
       articleDraft = undefined;
       screen = "scan";
@@ -890,10 +930,51 @@ async function handleClick(event: MouseEvent): Promise<void> {
     render();
   } else if (action === "cancel-selection") {
     selectedBarcode = "";
+    creatingArticle = false;
+    generatedBarcode = false;
+    creationDraft = { name: "", quantity: "0" };
     editingArticle = false;
     articleDraft = undefined;
     render();
     void startScanner();
+  } else if (action === "create-handmade") {
+    scanner.stop();
+    selectedBarcode = "";
+    creatingArticle = true;
+    generatedBarcode = false;
+    creationDraft = { name: "", quantity: "0" };
+    render();
+  } else if (action === "generate-barcode") {
+    const existing = new Set(articles.map((article) => article.barcode));
+    let barcode: string;
+    do {
+      const random = crypto.getRandomValues(new Uint8Array(8));
+      const suffix = Array.from(random, (value) => "0123456789ABCDEFGHJKMNPQRSTVWXYZ"[value & 31]).join("");
+      barcode = `SM-${Date.now().toString(36).toUpperCase()}-${suffix}`;
+    } while (existing.has(barcode));
+    try {
+      const { default: JsBarcode } = await import("jsbarcode");
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      JsBarcode(svg, barcode, {
+        format: "CODE128",
+        width: 2,
+        height: 64,
+        displayValue: false,
+        margin: 4,
+        lineColor: "#15231d",
+        background: "#ffffff"
+      });
+      selectedBarcode = barcode;
+      generatedBarcodeSvg = svg.outerHTML;
+      generatedBarcode = true;
+      render();
+    } catch (error) {
+      console.error("Could not generate an internal barcode.", error);
+      notice = t("barcodeGenerationFailed");
+      render();
+    }
+  } else if (action === "print-label") {
+    window.print();
   } else if (action === "dismiss-notice") {
     notice = "";
     render();
@@ -950,6 +1031,12 @@ appRoot.addEventListener("input", (event) => {
       name: articleDraft?.name ?? article?.name ?? "",
       barcode: target.value
     };
+  } else if (target instanceof HTMLInputElement && target.name === "name" && !editingArticle) {
+    creationDraft.name = target.value;
+    const labelName = appRoot.querySelector<HTMLElement>(".print-label > strong");
+    if (labelName) labelName.textContent = target.value.trim() || t("createHandmade");
+  } else if (target instanceof HTMLInputElement && target.name === "quantity" && !editingArticle) {
+    creationDraft.quantity = target.value;
   }
 });
 window.addEventListener("online", () => {

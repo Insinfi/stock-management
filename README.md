@@ -10,7 +10,12 @@ npm install
 npm run dev
 ```
 
-Camera access and PWA installation require HTTPS (or `localhost` during development). Use the barcode entry field if camera access is unavailable. To create a production bundle, run `npm run build`; the output is written to `dist/`.
+Camera access and PWA installation require HTTPS (or `localhost` during development). The PWA service worker is enabled for the Vite development server so you can test installation through an HTTPS tunnel. Point ngrok at Vite's port (`ngrok http 5173`) and open the HTTPS URL in Brave. Use the barcode entry field if camera access is unavailable. For production, run `npm run build` and serve the generated `dist/` directory over HTTPS.
+For handmade items without a manufacturer barcode, choose **Create a handmade article** in the scan screen, generate an internal Code 128 barcode, and print a label. These `SM-` barcodes are for your stockroom only; they are not registered GS1 retail barcodes.
+
+## Deploy on GitHub Pages
+
+The GitHub Actions workflow publishes the production PWA to `https://insinfi.github.io/stock-management/` whenever changes are pushed to `main`, or when run manually. In the repository settings, set **Pages → Build and deployment → Source** to **GitHub Actions**. Once the first deployment succeeds, install the app from that Pages URL; unlike the development tunnel, it stays available when your PC is off.
 
 ## Connect a Google Sheet
 

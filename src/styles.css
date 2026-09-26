@@ -162,6 +162,19 @@ h3 { font: 700 14px var(--sans-display); }
   border-radius: 11px; background: #fff; color: var(--ink); font-size: 13px;
 }
 .manual-form input::placeholder, .field-label input::placeholder { color: #a2aaa4; }
+.handmade-button { margin: 8px 0 0; border: 1px solid #e2e9df; background: #f8faf6; }
+.generated-code-block { margin-bottom: 16px; padding: 12px; border: 1px solid #e7ebe5; border-radius: 12px; background: #f9fbf7; }
+.generated-code-block .barcode-display { margin: 0; }
+.generated-code-hint { margin: 8px 2px 0; color: #7b8780; font-size: 10px; line-height: 1.5; }
+.generate-code-button, .print-label-button { min-height: 36px; margin-top: 8px; border: 1px solid #e2e9df; background: #fff; }
+.print-label {
+  display: flex; width: min(100%, 340px); min-height: 125px; align-items: center; flex-direction: column;
+  justify-content: center; gap: 7px; margin: 12px auto 0; padding: 12px;
+  border: 1px dashed #b9c4b8; border-radius: 8px; background: #fff; color: #15231d; text-align: center;
+}
+.print-label > strong { max-width: 100%; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.print-label svg { display: block; width: 100%; max-height: 68px; }
+.print-label > small { font: 600 10px "Segoe UI", Arial, sans-serif; letter-spacing: 1px; }
 .primary-button, .secondary-button {
   display: flex; width: 100%; min-height: 47px; align-items: center; justify-content: center; gap: 8px;
   border: 0; border-radius: 11px; font-size: 13px; font-weight: 700; cursor: pointer;
@@ -268,4 +281,15 @@ h3 { font: 700 14px var(--sans-display); }
 @media (prefers-reduced-motion: no-preference) {
   .article-card, .primary-button, .nav-item { transition: background-color .16s ease, color .16s ease, transform .16s ease; }
   .article-card:hover { transform: translateY(-1px); }
+}
+
+@page { margin: 8mm; }
+@media print {
+  body * { visibility: hidden !important; }
+  .print-label, .print-label * { visibility: visible !important; }
+  .print-label {
+    position: fixed; top: 0; left: 0; display: flex !important; width: 75mm; min-height: 35mm;
+    margin: 0; padding: 4mm; border: 1px solid #222; border-radius: 0; background: #fff;
+  }
+  .print-label svg { max-height: 18mm; }
 }

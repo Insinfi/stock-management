@@ -90,7 +90,6 @@
   "invalidBarcode": "Saisissez un code-barres.",
   "wholeNumber": "Saisissez un nombre entier pour la quantité.",
   "articleNameRequired": "Saisissez le nom de l’article.",
-  "startingQuantityNegative": "La quantité initiale ne peut pas être négative.",
   "articleAdded": "{name} ajouté à votre stock.",
   "articleMissing": "Cet article n’existe plus dans votre stock local.",
   "minimumQuantity": "Saisissez une quantité d’au moins 1.",

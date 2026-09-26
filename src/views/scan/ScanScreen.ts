@@ -1,5 +1,6 @@
 import type { Article } from "../../types";
 import type { Language } from "../../i18n";
+import { scannerFeature } from "../../features/scanner/ScannerFeature";
 import { renderArticleSelection } from "./ArticleSelection";
 import type { ViewContext } from "../view-context";
 
@@ -73,7 +74,7 @@ export function renderScanScreen(options: ScanScreenOptions, context: ViewContex
           <div class="camera-frame">
             <video id="scanner-video" muted playsinline></video>
             <div class="camera-overlay" aria-hidden="true"><span></span></div>
-            <button class="flash-button" type="button" data-action="toggle-flash" aria-pressed="false" hidden>⚡ ${t("flashOff")}</button>
+            ${scannerFeature.renderTorchButton(t)}
             <div class="camera-caption"><span class="live-dot"></span> ${t("pointBarcode")}</div>
           </div>
           <p class="scanner-hint">${t("scanHint")}</p>

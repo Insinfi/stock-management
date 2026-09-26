@@ -31,6 +31,7 @@ function frameRequest<T>(
     };
 
     const onMessage = (event: MessageEvent<ApiResult<T> & { nonce?: string }>) => {
+      if (event.source !== frame.contentWindow) return;
       if (event.data?.nonce !== nonce) return;
       if (completed) return;
       completed = true;
@@ -76,14 +77,47 @@ export class StockApi {
   constructor(private readonly endpoint: string) {}
 
   async getStock(): Promise<Article[]> {
-    return frameRequest<Article[]>(this.endpoint, { action: "getStock" }, "GET");
+    const stock = await frameRequest<unknown>(this.endpoint, { action: "getStock" }, "GET");
+    if (!Array.isArray(stock)) throw new Error("The stock service returned invalid article data.");
+    const articles = stock.map((value): Article => {
+      if (
+        !value ||
+        typeof value !== "object" ||
+        typeof value.barcode !== "string" ||
+        !value.barcode.trim() ||
+        value.barcode.length > 160 ||
+        typeof value.name !== "string" ||
+        !value.name.trim() ||
+        value.name.length > 120 ||
+        !Number.isSafeInteger(value.quantity) ||
+        value.quantity < 0 ||
+        typeof value.updatedAt !== "string"
+      ) {
+        throw new Error("The stock service returned invalid article data.");
+      }
+      return {
+        barcode: value.barcode,
+        name: value.name,
+        quantity: value.quantity,
+        updatedAt: value.updatedAt
+      };
+    });
+    const barcodes = new Set<string>();
+    for (const article of articles) {
+      if (barcodes.has(article.barcode)) {
+        throw new Error("The stock service returned duplicate article barcodes.");
+      }
+      barcodes.add(article.barcode);
+    }
+    return articles;
   }
 
   async send(command: StockCommand): Promise<void> {
-    await frameRequest<true>(
+    const result = await frameRequest<unknown>(
       this.endpoint,
       { action: "command", payload: JSON.stringify(command) },
       "POST"
     );
+    if (result !== true) throw new Error("The stock service did not confirm the command.");
   }
 }

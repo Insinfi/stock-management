@@ -90,7 +90,6 @@
   "invalidBarcode": "Enter a barcode.",
   "wholeNumber": "Enter a whole number for the quantity.",
   "articleNameRequired": "Enter an article name.",
-  "startingQuantityNegative": "Starting quantity cannot be negative.",
   "articleAdded": "{name} added to your stock.",
   "articleMissing": "This article is no longer in your local stock.",
   "minimumQuantity": "Enter a quantity of at least 1.",

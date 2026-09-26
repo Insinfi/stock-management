@@ -1,7 +1,7 @@
 # Stockroom
 
 Stockroom is a mobile-first, installable stock manager. It stores articles and an ordered movement queue in IndexedDB, so scanning and stock changes continue to work offline. When configured and online, it syncs the queue to a Google Sheet through a bound Google Apps Script web app.
-The interface is available in English and French; the language can be changed from the top bar and is remembered on the device.
+The interface is available in English and French; the language can be changed from the top bar and is remembered on the device. Translation strings live in `src/locales/en.json` and `src/locales/fr.json`; `src/i18n.ts` provides the typed lookup helper. Screen templates are separated into `src/views/stock/` and `src/views/scan/`, with the scan article form in its own component. Feature behavior lives in `src/features/`: camera and flashlight behavior, article management and stock movements, and cloud synchronization each have a dedicated module.
 
 ## Run the app
 

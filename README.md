@@ -11,6 +11,7 @@ npm run dev
 ```
 
 Camera access and PWA installation require HTTPS (or `localhost` during development). Use the barcode entry field if camera access is unavailable. To create a production bundle, run `npm run build`; the output is written to `dist/`.
+For handmade items without a manufacturer barcode, choose **Create a handmade article** in the scan screen, generate an internal Code 128 barcode, and print a label. These `SM-` barcodes are for your stockroom only; they are not registered GS1 retail barcodes.
 
 ## Connect a Google Sheet
 

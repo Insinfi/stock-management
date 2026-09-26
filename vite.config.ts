@@ -2,13 +2,18 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  base: process.env.GITHUB_ACTIONS === "true" ? "/stock-management/" : "/",
   server: {
     allowedHosts: ["01e9-94-106-224-120.ngrok-free.app"]
   },
   plugins: [
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["stockroom.svg"],
+      devOptions: {
+        enabled: true,
+        type: "module"
+      },
+      includeAssets: ["stockroom.svg", "stockroom-192.png", "stockroom-512.png"],
       manifest: {
         name: "Stockroom — Stock manager",
         short_name: "Stockroom",
@@ -17,10 +22,23 @@ export default defineConfig({
         background_color: "#f6f7f3",
         display: "standalone",
         orientation: "portrait",
-        start_url: "/",
+        start_url: "./",
+        scope: "./",
         icons: [
           {
-            src: "/stockroom.svg",
+            src: "stockroom-192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "any"
+          },
+          {
+            src: "stockroom-512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any maskable"
+          },
+          {
+            src: "stockroom.svg",
             sizes: "any",
             type: "image/svg+xml",
             purpose: "any maskable"

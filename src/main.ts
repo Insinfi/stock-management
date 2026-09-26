@@ -1,4 +1,8 @@
 import { StockApi } from "./api";
+import { translate, type Language, type TranslationKey } from "./i18n";
+import { renderScanScreen } from "./views/scan/ScanScreen";
+import { renderStockScreen } from "./views/stock/StockScreen";
+import type { ViewContext } from "./views/view-context";
 import {
   commitArticleDelete,
   commitArticleUpdate,
@@ -14,256 +18,6 @@ import type { Article, StockCommand } from "./types";
 import "./styles.css";
 
 type Screen = "stock" | "scan";
-type Language = "en" | "fr";
-
-const translations = {
-  en: {
-    offline: "Offline",
-    syncing: "Syncing",
-    localOnly: "Local only",
-    online: "Online",
-    inStock: "in stock",
-    noMatches: "No matches found",
-    emptyStock: "Your stockroom is empty",
-    tryDifferentSearch: "Try another name or barcode.",
-    scanFirstBarcode: "Scan your first barcode to add an article.",
-    yourStorage: "YOUR STORAGE",
-    stockOverview: "Stock overview",
-    connectionSettings: "Connection settings",
-    totalUnits: "Total units on hand",
-    articles: "Articles",
-    allArticles: "All articles",
-    syncingButton: "Syncing…",
-    syncCount: "Sync {count}",
-    sync: "↻ Sync",
-    searchPlaceholder: "Search name or barcode",
-    productSearch: "Find an article",
-    productSearchPlaceholder: "Search by product name",
-    noArticlesFound: "No articles match your search.",
-    selectArticle: "Select article",
-    localNote: "Your stock is saved on this device. Connect a Google Sheet to sync across devices.",
-    newArticle: "NEW ARTICLE",
-    barcodeUnknown: "Barcode not recognized",
-    barcode: "Barcode",
-    createHandmade: "Create a handmade article",
-    internalBarcodeInfo: "Generate an internal barcode and print a label to attach to this item.",
-    generateBarcode: "Generate barcode",
-    barcodeGenerationFailed: "Could not generate the barcode. Please try again.",
-    printLabel: "Print label",
-    internalBarcode: "Internal barcode",
-    barcodeNotGenerated: "Not generated yet",
-    articleName: "Article name",
-    editStock: "Adjust",
-    adjustArticleStock: "Adjust stock for {name}",
-    startingQuantity: "Starting quantity",
-    newArticlePlaceholder: "e.g. Storage box, medium",
-    createArticle: "Create article",
-    cancel: "Cancel",
-    articleFound: "ARTICLE FOUND",
-    editArticle: "Edit name / barcode",
-    saveArticleChanges: "Save changes",
-    deleteArticle: "Delete article",
-    deleteArticleConfirm: "Permanently delete {name} from your stock? This cannot be undone.",
-    articleUpdated: "{name} updated.",
-    articleDeleted: "{name} deleted.",
-    duplicateBarcode: "Another article already uses this barcode.",
-    currentStock: "Current stock",
-    units: "units",
-    movementType: "Movement type",
-    addStock: "Add stock",
-    increaseQuantity: "Increase quantity",
-    removeStock: "Remove stock",
-    decreaseQuantity: "Decrease quantity",
-    quantity: "Quantity",
-    confirmMovement: "Confirm movement",
-    scanAnother: "Scan another article",
-    stockMovement: "STOCK MOVEMENT",
-    scanMove: "Scan & move",
-    pointBarcode: "Point at a barcode",
-    scanHint: "Hold the barcode steady inside the frame. It will scan automatically.",
-    flashOff: "Flash off",
-    flashOn: "Flash on",
-    flashFailed: "Could not toggle the flash: {error}",
-    orEnterManually: "or enter manually",
-    enterBarcode: "Enter barcode",
-    barcodePlaceholder: "Type or paste a barcode",
-    findArticle: "Find article",
-    worksOffline: "Works offline",
-    offlineQueueHint: "Your changes are saved on this device and queued to sync later.",
-    cloudSync: "CLOUD SYNC",
-    connectSheet: "Connect your stock sheet",
-    settingsDescription: "Paste the web app URL from your Google Apps Script deployment. You can keep using Stockroom offline until it is ready.",
-    appsScriptUrl: "Apps Script web app URL",
-    saveConnection: "Save connection",
-    accessMatters: "Access matters.",
-    securityDescription: "Restrict the Apps Script deployment to your Google account or organization where possible. Anyone who can open a publicly accessible endpoint could change stock.",
-    disconnect: "Disconnect this device",
-    close: "Close",
-    mainNavigation: "Main navigation",
-    stockroomHome: "Stockroom home",
-    stockNav: "Stock",
-    scanNav: "Scan & move",
-    installApp: "＋ Install app",
-    connectFirst: "Connect a Google Sheet first.",
-    barcodeTooLong: "This barcode is too long to save.",
-    invalidBarcode: "Enter a barcode.",
-    wholeNumber: "Enter a whole number for the quantity.",
-    articleNameRequired: "Enter an article name.",
-    startingQuantityNegative: "Starting quantity cannot be negative.",
-    articleAdded: "{name} added to your stock.",
-    articleMissing: "This article is no longer in your local stock.",
-    minimumQuantity: "Enter a quantity of at least 1.",
-    chooseMovement: "Choose whether to add or remove stock.",
-    availableUnits: "Only {count} units are currently available.",
-    quantityRange: "The resulting stock quantity is outside the supported range.",
-    addedOne: "Added 1 unit to {name}.",
-    addedMany: "Added {count} units to {name}.",
-    removedOne: "Removed 1 unit from {name}.",
-    removedMany: "Removed {count} units from {name}.",
-    enterDeploymentUrl: "Enter a valid Apps Script deployment URL.",
-    httpsDeploymentUrl: "Use the HTTPS web app URL from script.google.com.",
-    connectionSaved: "Connection saved. Syncing your stock…",
-    saveFailed: "Could not save this change.",
-    stockUpToDate: "Stock is up to date.",
-    syncPaused: "Sync paused: {error}",
-    syncFailed: "Sync failed unexpectedly.",
-    connectionRemoved: "Sheet connection removed from this device. Local stock is unchanged.",
-    cameraUnavailable: "Camera unavailable: {error}. Enter the barcode manually instead.",
-    cameraUnavailableFallback: "Camera unavailable. Enter the barcode manually instead.",
-    localStockLoadFailed: "Could not load local stock.",
-    dismissNotice: "Dismiss",
-    showFrench: "Afficher en français",
-    showEnglish: "Display in English",
-    french: "FR",
-    english: "EN",
-    documentTitle: "Stockroom — Stock manager",
-    description: "A simple, offline-ready stock manager for your warehouse."
-  },
-  fr: {
-    offline: "Hors ligne",
-    syncing: "Synchronisation",
-    localOnly: "Local uniquement",
-    online: "En ligne",
-    inStock: "en stock",
-    noMatches: "Aucun résultat",
-    emptyStock: "Votre stock est vide",
-    tryDifferentSearch: "Essayez un autre nom ou code-barres.",
-    scanFirstBarcode: "Scannez votre premier code-barres pour ajouter un article.",
-    yourStorage: "VOTRE ENTREPÔT",
-    stockOverview: "Vue du stock",
-    connectionSettings: "Paramètres de connexion",
-    totalUnits: "Unités en stock",
-    articles: "Articles",
-    allArticles: "Tous les articles",
-    syncingButton: "Synchronisation…",
-    syncCount: "Synchroniser ({count})",
-    sync: "↻ Synchroniser",
-    searchPlaceholder: "Rechercher par nom ou code-barres",
-    productSearch: "Rechercher un article",
-    productSearchPlaceholder: "Rechercher par nom de produit",
-    noArticlesFound: "Aucun article ne correspond à votre recherche.",
-    selectArticle: "Sélectionner l’article",
-    localNote: "Votre stock est enregistré sur cet appareil. Connectez une feuille Google pour synchroniser vos appareils.",
-    newArticle: "NOUVEL ARTICLE",
-    barcodeUnknown: "Code-barres inconnu",
-    barcode: "Code-barres",
-    createHandmade: "Créer un article fait main",
-    internalBarcodeInfo: "Générez un code-barres interne et imprimez une étiquette à coller sur cet article.",
-    generateBarcode: "Générer un code-barres",
-    barcodeGenerationFailed: "Impossible de générer le code-barres. Veuillez réessayer.",
-    printLabel: "Imprimer l’étiquette",
-    internalBarcode: "Code-barres interne",
-    barcodeNotGenerated: "Pas encore généré",
-    articleName: "Nom de l’article",
-    editStock: "Modifier",
-    adjustArticleStock: "Modifier le stock de {name}",
-    startingQuantity: "Quantité initiale",
-    newArticlePlaceholder: "ex. Boîte de rangement, moyenne",
-    createArticle: "Créer l’article",
-    cancel: "Annuler",
-    articleFound: "ARTICLE TROUVÉ",
-    editArticle: "Modifier le nom / code-barres",
-    saveArticleChanges: "Enregistrer",
-    deleteArticle: "Supprimer l’article",
-    deleteArticleConfirm: "Supprimer définitivement {name} de votre stock ? Cette action est irréversible.",
-    articleUpdated: "{name} a été modifié.",
-    articleDeleted: "{name} a été supprimé.",
-    duplicateBarcode: "Un autre article utilise déjà ce code-barres.",
-    currentStock: "Stock actuel",
-    units: "unités",
-    movementType: "Type de mouvement",
-    addStock: "Ajouter du stock",
-    increaseQuantity: "Augmenter la quantité",
-    removeStock: "Retirer du stock",
-    decreaseQuantity: "Diminuer la quantité",
-    quantity: "Quantité",
-    confirmMovement: "Confirmer le mouvement",
-    scanAnother: "Scanner un autre article",
-    stockMovement: "MOUVEMENT DE STOCK",
-    scanMove: "Scanner et gérer",
-    pointBarcode: "Visez un code-barres",
-    scanHint: "Maintenez le code-barres dans le cadre. Il sera scanné automatiquement.",
-    flashOff: "Flash désactivé",
-    flashOn: "Flash activé",
-    flashFailed: "Impossible de changer le flash : {error}",
-    orEnterManually: "ou saisir manuellement",
-    enterBarcode: "Saisir le code-barres",
-    barcodePlaceholder: "Saisir ou coller un code-barres",
-    findArticle: "Rechercher l’article",
-    worksOffline: "Fonctionne hors ligne",
-    offlineQueueHint: "Vos modifications sont enregistrées sur cet appareil et seront synchronisées plus tard.",
-    cloudSync: "SYNCHRONISATION EN LIGNE",
-    connectSheet: "Connecter votre feuille de stock",
-    settingsDescription: "Collez l’URL de l’application web déployée depuis Google Apps Script. Stockroom reste utilisable hors ligne en attendant.",
-    appsScriptUrl: "URL de l’application web Apps Script",
-    saveConnection: "Enregistrer la connexion",
-    accessMatters: "Attention aux accès.",
-    securityDescription: "Dans la mesure du possible, limitez l’accès au déploiement Apps Script à votre compte Google ou à votre organisation. Toute personne pouvant accéder à une URL publique pourrait modifier le stock.",
-    disconnect: "Déconnecter cet appareil",
-    close: "Fermer",
-    mainNavigation: "Navigation principale",
-    stockroomHome: "Accueil Stockroom",
-    stockNav: "Stock",
-    scanNav: "Scanner",
-    installApp: "＋ Installer l’application",
-    connectFirst: "Connectez d’abord une feuille Google.",
-    barcodeTooLong: "Ce code-barres est trop long pour être enregistré.",
-    invalidBarcode: "Saisissez un code-barres.",
-    wholeNumber: "Saisissez un nombre entier pour la quantité.",
-    articleNameRequired: "Saisissez le nom de l’article.",
-    startingQuantityNegative: "La quantité initiale ne peut pas être négative.",
-    articleAdded: "{name} ajouté à votre stock.",
-    articleMissing: "Cet article n’existe plus dans votre stock local.",
-    minimumQuantity: "Saisissez une quantité d’au moins 1.",
-    chooseMovement: "Choisissez d’ajouter ou de retirer du stock.",
-    availableUnits: "Seules {count} unités sont actuellement disponibles.",
-    quantityRange: "La quantité de stock obtenue dépasse la limite autorisée.",
-    addedOne: "1 unité ajoutée à {name}.",
-    addedMany: "{count} unités ajoutées à {name}.",
-    removedOne: "1 unité retirée de {name}.",
-    removedMany: "{count} unités retirées de {name}.",
-    enterDeploymentUrl: "Saisissez une URL de déploiement Apps Script valide.",
-    httpsDeploymentUrl: "Utilisez l’URL HTTPS de l’application web sur script.google.com.",
-    connectionSaved: "Connexion enregistrée. Synchronisation du stock…",
-    saveFailed: "Impossible d’enregistrer cette modification.",
-    stockUpToDate: "Le stock est à jour.",
-    syncPaused: "Synchronisation interrompue : {error}",
-    syncFailed: "Échec inattendu de la synchronisation.",
-    connectionRemoved: "La connexion à la feuille a été supprimée de cet appareil. Le stock local est conservé.",
-    cameraUnavailable: "Caméra indisponible : {error}. Saisissez plutôt le code-barres manuellement.",
-    cameraUnavailableFallback: "Caméra indisponible. Saisissez plutôt le code-barres manuellement.",
-    localStockLoadFailed: "Impossible de charger le stock local.",
-    dismissNotice: "Fermer",
-    showFrench: "Afficher en français",
-    showEnglish: "Afficher en anglais",
-    french: "FR",
-    english: "EN",
-    documentTitle: "Stockroom — Gestion du stock",
-    description: "Une application simple de gestion de stock, utilisable hors ligne."
-  }
-} as const;
-
-type TranslationKey = keyof typeof translations.en;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("The app root element is missing.");
@@ -316,9 +70,7 @@ function escapeHtml(value: string): string {
 }
 
 function t(key: TranslationKey, values: Record<string, string | number> = {}): string {
-  return translations[language][key].replace(/\{(\w+)\}/g, (_, name: string) =>
-    String(values[name] ?? `{${name}}`)
-  );
+  return translate(language, key, values);
 }
 
 function formatNumber(value: number): string {
@@ -368,215 +120,6 @@ function renderSyncUpdate(): void {
   updateNotice();
 }
 
-function renderArticle(article: Article): string {
-  const low = article.quantity <= 5;
-  return `
-    <article class="article-card">
-      <div class="article-symbol" aria-hidden="true">${escapeHtml(article.name.slice(0, 1).toUpperCase())}</div>
-      <div class="article-info">
-        <h3>${escapeHtml(article.name)}</h3>
-        <p>${escapeHtml(article.barcode)}</p>
-      </div>
-      <div class="article-stock ${low ? "article-stock-low" : ""}">
-        <strong>${formatNumber(article.quantity)}</strong>
-        <span>${t("inStock")}</span>
-      </div>
-      <button class="article-edit-button" type="button" data-action="edit-stock" data-barcode="${escapeHtml(article.barcode)}" aria-label="${escapeHtml(t("adjustArticleStock", { name: article.name }))}" title="${escapeHtml(t("adjustArticleStock", { name: article.name }))}">
-        <span aria-hidden="true">±</span><span>${t("editStock")}</span>
-      </button>
-    </article>
-  `;
-}
-
-function renderStockScreen(): string {
-  const matched = articles
-    .filter((article) => `${article.name} ${article.barcode}`.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const totalUnits = articles.reduce((sum, article) => sum + article.quantity, 0);
-  const articleList = matched.length
-    ? matched.map(renderArticle).join("")
-    : `<div class="empty-state">
-        <div class="empty-icon" aria-hidden="true">⌕</div>
-        <h3>${articles.length ? t("noMatches") : t("emptyStock")}</h3>
-        <p>${articles.length ? t("tryDifferentSearch") : t("scanFirstBarcode")}</p>
-      </div>`;
-
-  return `
-    <section class="screen" aria-labelledby="stock-heading">
-      <div class="screen-heading">
-        <div>
-          <p class="eyebrow">${t("yourStorage")}</p>
-          <h1 id="stock-heading">${t("stockOverview")}</h1>
-        </div>
-        <button class="icon-button" type="button" data-action="settings" aria-label="${t("connectionSettings")}">⚙</button>
-      </div>
-      <div class="overview-card">
-        <div>
-          <span class="overview-label">${t("totalUnits")}</span>
-          <strong>${formatNumber(totalUnits)}</strong>
-        </div>
-        <div class="overview-divider"></div>
-        <div>
-          <span class="overview-label">${t("articles")}</span>
-          <strong>${formatNumber(articles.length)}</strong>
-        </div>
-        <div class="overview-mark" aria-hidden="true">↗</div>
-      </div>
-      <div class="section-title-row">
-        <h2>${t("allArticles")} <span class="count-pill">${articles.length}</span></h2>
-        <button class="text-button" type="button" data-action="sync" ${syncing || !endpoint || !navigator.onLine ? "disabled" : ""}>
-          ${syncing ? t("syncingButton") : pendingCommands.length ? t("syncCount", { count: pendingCommands.length }) : t("sync")}
-        </button>
-      </div>
-      <label class="search-box">
-        <span aria-hidden="true">⌕</span>
-        <input type="search" name="search" value="${escapeHtml(search)}" placeholder="${t("searchPlaceholder")}" autocomplete="off" />
-        <kbd>/</kbd>
-      </label>
-      <div class="article-list">${articleList}</div>
-      ${!endpoint ? `<p class="local-note">${t("localNote")}</p>` : ""}
-    </section>
-  `;
-}
-
-function renderSelection(): string {
-  const article = articles.find((item) => item.barcode === selectedBarcode);
-  if (!selectedBarcode && !creatingArticle) return "";
-  if (!article) {
-    return `
-      <form class="entry-card" data-form="create">
-        <div class="entry-heading">
-          <div class="entry-icon">＋</div>
-          <div><p class="eyebrow">${t("newArticle")}</p><h2>${creatingArticle ? t("createHandmade") : t("barcodeUnknown")}</h2></div>
-        </div>
-        <div class="generated-code-block">
-          <p class="barcode-display">${generatedBarcode ? t("internalBarcode") : t("barcode")} <strong>${escapeHtml(selectedBarcode || t("barcodeNotGenerated"))}</strong></p>
-          <p class="generated-code-hint">${t("internalBarcodeInfo")}</p>
-          <button class="secondary-button generate-code-button" type="button" data-action="generate-barcode">${t("generateBarcode")}</button>
-          ${generatedBarcode ? `<div class="print-label"><strong>${escapeHtml(creationDraft.name || t("createHandmade"))}</strong>${generatedBarcodeSvg}<small>${escapeHtml(selectedBarcode)}</small></div><button class="secondary-button print-label-button" type="button" data-action="print-label">${t("printLabel")}</button>` : ""}
-        </div>
-        <label class="field-label">${t("articleName")}
-          <input name="name" required maxlength="120" value="${escapeHtml(creationDraft.name)}" placeholder="${t("newArticlePlaceholder")}" />
-        </label>
-        <label class="field-label">${t("startingQuantity")}
-          <input name="quantity" type="number" min="0" step="1" value="${escapeHtml(creationDraft.quantity)}" required inputmode="numeric" />
-        </label>
-        <button class="primary-button" type="submit">${t("createArticle")}</button>
-        <button class="secondary-button" type="button" data-action="cancel-selection">${t("cancel")}</button>
-      </form>
-    `;
-  }
-  if (editingArticle) {
-    return `
-      <form class="entry-card" data-form="edit-article">
-        <div class="entry-heading">
-          <div class="entry-icon">✎</div>
-          <div><p class="eyebrow">${t("articleFound")}</p><h2>${escapeHtml(article.name)}</h2></div>
-        </div>
-        <label class="field-label">${t("articleName")}
-          <input name="name" required maxlength="120" value="${escapeHtml(articleDraft?.name ?? article.name)}" />
-        </label>
-        <label class="field-label">${t("barcode")}
-          <input name="barcode" required maxlength="160" value="${escapeHtml(articleDraft?.barcode ?? article.barcode)}" />
-        </label>
-        <button class="primary-button" type="submit">${t("saveArticleChanges")}</button>
-        <button class="secondary-button" type="button" data-action="cancel-article-edit">${t("cancel")}</button>
-        <button class="danger-button" type="button" data-action="delete-article" data-barcode="${escapeHtml(article.barcode)}">${t("deleteArticle")}</button>
-      </form>
-    `;
-  }
-  return `
-    <form class="entry-card" data-form="movement">
-      <div class="entry-heading">
-        <div class="entry-icon">▦</div>
-        <div><p class="eyebrow">${t("articleFound")}</p><h2>${escapeHtml(article.name)}</h2></div>
-        <button class="detail-edit-button" type="button" data-action="edit-article" aria-label="${escapeHtml(t("editArticle"))}">✎ ${t("editArticle")}</button>
-      </div>
-      <p class="barcode-display">${t("barcode")} <strong>${escapeHtml(article.barcode)}</strong></p>
-      <div class="current-stock"><span>${t("currentStock")}</span><strong>${formatNumber(article.quantity)} <small>${t("units")}</small></strong></div>
-      <div class="movement-choice" role="group" aria-label="${t("movementType")}">
-        <label class="choice-card choice-add">
-          <input type="radio" name="movementType" value="add" checked />
-          <span class="choice-check"></span><span class="choice-symbol">＋</span>
-          <span><strong>${t("addStock")}</strong><small>${t("increaseQuantity")}</small></span>
-        </label>
-        <label class="choice-card choice-remove">
-          <input type="radio" name="movementType" value="remove" />
-          <span class="choice-check"></span><span class="choice-symbol">−</span>
-          <span><strong>${t("removeStock")}</strong><small>${t("decreaseQuantity")}</small></span>
-        </label>
-      </div>
-      <label class="field-label">${t("quantity")}
-        <input name="quantity" type="number" min="1" step="1" value="1" required inputmode="numeric" />
-      </label>
-      <button class="primary-button" type="submit">${t("confirmMovement")} <span aria-hidden="true">→</span></button>
-      <button class="secondary-button" type="button" data-action="cancel-selection">${t("scanAnother")}</button>
-      <button class="danger-button" type="button" data-action="delete-article" data-barcode="${escapeHtml(article.barcode)}">${t("deleteArticle")}</button>
-    </form>
-  `;
-}
-
-function renderScanScreen(): string {
-  const matchingArticles = articles
-    .filter((article) =>
-      `${article.name} ${article.barcode}`.toLocaleLowerCase(language === "fr" ? "fr-FR" : "en-US")
-        .includes(scanSearch.trim().toLocaleLowerCase(language === "fr" ? "fr-FR" : "en-US"))
-    )
-    .sort((a, b) => a.name.localeCompare(b.name, language === "fr" ? "fr" : "en"));
-  const searchResults = scanSearch.trim()
-    ? matchingArticles.length
-      ? `<div class="scan-results" role="list">
-          ${matchingArticles.map((article) => `
-            <button class="scan-result" type="button" role="listitem" data-action="select-article" data-barcode="${escapeHtml(article.barcode)}" aria-label="${t("selectArticle")}: ${escapeHtml(article.name)}">
-              <span class="scan-result-icon" aria-hidden="true">${escapeHtml(article.name.slice(0, 1).toLocaleUpperCase(language === "fr" ? "fr-FR" : "en-US"))}</span>
-              <span class="scan-result-info"><strong>${escapeHtml(article.name)}</strong><small>${escapeHtml(article.barcode)}</small></span>
-              <span class="scan-result-quantity">${formatNumber(article.quantity)} ${t("units")}</span>
-            </button>
-          `).join("")}
-        </div>`
-      : `<p class="scan-search-empty">${t("noArticlesFound")}</p>`
-    : "";
-
-  return `
-    <section class="screen" aria-labelledby="scan-heading">
-      <div class="screen-heading">
-        <div>
-          <p class="eyebrow">${t("stockMovement")}</p>
-          <h1 id="scan-heading">${t("scanMove")}</h1>
-        </div>
-        <span class="scan-step">01 <i></i> 02</span>
-      </div>
-      ${!selectedBarcode && !creatingArticle ? `
-        <label class="scan-search-box">
-          <span aria-hidden="true">⌕</span>
-          <span class="scan-search-label">${t("productSearch")}</span>
-          <input type="search" name="scanSearch" value="${escapeHtml(scanSearch)}" placeholder="${t("productSearchPlaceholder")}" autocomplete="off" />
-        </label>
-        ${searchResults}
-        ${scanSearch.trim() ? "" : `
-        <div class="scanner-card">
-          <div class="camera-frame">
-            <video id="scanner-video" muted playsinline></video>
-            <div class="camera-overlay" aria-hidden="true"><span></span></div>
-            <button class="flash-button" type="button" data-action="toggle-flash" aria-pressed="false" hidden>⚡ ${t("flashOff")}</button>
-            <div class="camera-caption"><span class="live-dot"></span> ${t("pointBarcode")}</div>
-          </div>
-          <p class="scanner-hint">${t("scanHint")}</p>
-          <div class="or-divider"><span></span>${t("orEnterManually")}<span></span></div>
-          <form class="manual-form" data-form="lookup">
-            <label class="sr-only" for="manual-barcode">${t("enterBarcode")}</label>
-            <input id="manual-barcode" name="barcode" maxlength="160" placeholder="${t("barcodePlaceholder")}" autocomplete="off" required />
-            <button class="primary-button" type="submit">${t("findArticle")}</button>
-          </form>
-          <button class="secondary-button handmade-button" type="button" data-action="create-handmade">${t("createHandmade")}</button>
-        </div>
-        `}
-      ` : renderSelection()}
-      <div class="scan-tip"><span aria-hidden="true">✳</span><p><strong>${t("worksOffline")}</strong><br />${t("offlineQueueHint")}</p></div>
-    </section>
-  `;
-}
-
 function renderSettings(): string {
   return `
     <div class="dialog-backdrop" data-action="close-settings">
@@ -611,7 +154,28 @@ function render(): void {
     focusedSearchName && document.activeElement instanceof HTMLInputElement
       ? document.activeElement.selectionStart
       : null;
-  const current = screen === "stock" ? renderStockScreen() : renderScanScreen();
+  const viewContext: ViewContext = { t, escapeHtml, formatNumber };
+  const current =
+    screen === "stock"
+      ? renderStockScreen(
+          { articles, search, pendingCommands, syncing, endpoint, online: navigator.onLine },
+          viewContext
+        )
+      : renderScanScreen(
+          {
+            articles,
+            language,
+            scanSearch,
+            selectedBarcode,
+            creatingArticle,
+            generatedBarcode,
+            generatedBarcodeSvg,
+            creationDraft,
+            editingArticle,
+            articleDraft
+          },
+          viewContext
+        );
   appRoot.innerHTML = `
     <div class="app-shell">
       <header class="topbar">

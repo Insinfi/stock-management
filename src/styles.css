@@ -36,6 +36,12 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
   color: #eaf1e6; background: var(--green-dark); font-size: 15px;
 }
 .brand-period { color: #88b76a; }
+.topbar-actions { display: flex; align-items: center; gap: 15px; }
+.language-toggle {
+  min-width: 36px; height: 32px; padding: 0 8px; border: 1px solid var(--line);
+  border-radius: 10px; background: #fff; color: var(--green); font-size: 11px;
+  font-weight: 700; cursor: pointer;
+}
 .sync-status { display: flex; gap: 8px; align-items: center; color: #68746e; font-size: 12px; font-weight: 600; }
 .status-dot, .live-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: #72a876; }
 .is-offline .status-dot { background: #d68d50; }
@@ -194,6 +200,7 @@ h3 { font: 700 14px var(--sans-display); }
 }
 @media (max-width: 560px) {
   .topbar { height: 64px; padding: 0 20px; }
+  .topbar-actions { gap: 10px; }
   main { padding: 20px 18px 34px; }
   h1 { font-size: 27px; }
   .overview-card { min-height: 116px; gap: 17px; padding: 21px; border-radius: 17px; }

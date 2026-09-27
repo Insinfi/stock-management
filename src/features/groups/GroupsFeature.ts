@@ -10,6 +10,7 @@ export interface GroupsFeatureContext {
   setNotice(value: string): void;
   t: Translate;
   render(): void;
+  replaceNavigation(): void;
   refreshLocalData(): Promise<void>;
   synchronize(): Promise<void>;
 }
@@ -70,6 +71,7 @@ export class GroupsFeature {
     this.context.setNotice(this.context.t("groupCreated", { name }));
     this.activeGroupId = id;
     this.stopSelecting();
+    this.context.replaceNavigation();
     this.context.render();
     void this.context.synchronize();
     return true;
@@ -144,6 +146,7 @@ export class GroupsFeature {
     await this.setGroup(groupId, groupName, [...this.selectedBarcodes]);
     this.context.setNotice(this.context.t("groupItemsAdded", { count: this.selectedBarcodes.size }));
     this.stopSelecting();
+    this.context.replaceNavigation();
     this.context.render();
     void this.context.synchronize();
   }
@@ -197,6 +200,7 @@ export class GroupsFeature {
         : c.t("groupMemberRemoved", { name: member.name })
     );
     if (remaining.length <= 1) this.activeGroupId = undefined;
+    c.replaceNavigation();
     c.render();
     void c.synchronize();
   }

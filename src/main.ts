@@ -77,6 +77,7 @@ const groupsFeature = new GroupsFeature({
   setNotice: (value) => { notice = value; },
   t,
   render,
+  replaceNavigation: replaceCurrentNavigationState,
   refreshLocalData,
   synchronize: () => syncFeature.synchronize()
 });
@@ -101,6 +102,7 @@ const stockFeature = new StockFeature({
   t,
   formatNumber,
   render,
+  replaceNavigation: replaceCurrentNavigationState,
   refreshLocalData,
   synchronize: () => syncFeature.synchronize(),
   stopScanner: () => scannerFeature.stop(),
@@ -329,6 +331,11 @@ function syncNavigationState(): void {
   history.pushState({ stockroom: true, snapshot }, "");
 }
 
+function replaceCurrentNavigationState(): void {
+  if (!navigationReady) return;
+  history.replaceState({ stockroom: true, snapshot: captureNavigationSnapshot() }, "");
+}
+
 function initializeNavigation(): void {
   const snapshot = captureNavigationSnapshot();
   const state: StockroomHistoryState = { stockroom: true, snapshot };
@@ -431,7 +438,10 @@ async function handleClick(event: MouseEvent): Promise<void> {
   const action = target.closest<HTMLElement>("[data-action]")?.dataset.action;
   if (!action) return;
 
-  if (await scanner.handleAction(target, appRoot, t)) {
+  if (action === "close-group" || action === "cancel-group-selection") {
+    history.back();
+    return;
+  } else if (await scanner.handleAction(target, appRoot, t)) {
     return;
   } else if (await groupsFeature.handleAction(action, target)) {
     return;

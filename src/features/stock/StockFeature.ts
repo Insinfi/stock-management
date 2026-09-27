@@ -1,4 +1,5 @@
 import {
+  cacheArticlePhoto,
   commitArticleDelete,
   commitArticlePhoto,
   commitArticleUpdate,
@@ -35,6 +36,7 @@ export interface StockFeatureContext {
   t: Translate;
   formatNumber(value: number): string;
   render(): void;
+  replaceNavigation(): void;
   refreshLocalData(): Promise<void>;
   synchronize(): Promise<void>;
   stopScanner(): void;
@@ -62,6 +64,8 @@ export class StockFeature {
       try {
         const photo = await this.getPhoto(fileId);
         this.renderPhoto(fileId, photo);
+        const article = c.getArticles().find((item) => item.photoFileId === fileId);
+        if (article) await cacheArticlePhoto(article.barcode, photo);
       } catch (error) {
         console.warn("Could not load an article photo.", error);
       }
@@ -298,6 +302,7 @@ export class StockFeature {
     c.setCreationDraft({ name: "", quantity: "0" });
     c.setScreen("stock");
     c.setNotice(c.t("articleAdded", { name }));
+    c.replaceNavigation();
     c.render();
     void c.synchronize();
   }
@@ -334,6 +339,7 @@ export class StockFeature {
         ? quantity === 1 ? "addedOne" : "addedMany"
         : quantity === 1 ? "removedOne" : "removedMany";
     c.setNotice(c.t(movementNotice, { count: c.formatNumber(quantity), name: article.name }));
+    c.replaceNavigation();
     c.render();
     void c.synchronize();
   }
@@ -375,6 +381,7 @@ export class StockFeature {
     c.setArticleDraft(undefined);
     c.setScreen("stock");
     c.setNotice(c.t("articleUpdated", { name }));
+    c.replaceNavigation();
     c.render();
     void c.synchronize();
   }
@@ -397,6 +404,7 @@ export class StockFeature {
     c.setArticleDraft(undefined);
     c.setScreen("stock");
     c.setNotice(c.t("articleDeleted", { name: article.name }));
+    c.replaceNavigation();
     c.render();
     void c.synchronize();
   }

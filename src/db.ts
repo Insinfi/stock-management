@@ -86,15 +86,12 @@ export async function getArticles(): Promise<Article[]> {
   }
 }
 
-export async function getArticle(barcode: string): Promise<Article | undefined> {
-  const database = await openDatabase();
-  try {
-    return await requestResult<Article | undefined>(
-      database.transaction(ARTICLES, "readonly").objectStore(ARTICLES).get(barcode)
-    );
-  } finally {
-    database.close();
-  }
+export async function cacheArticlePhoto(barcode: string, photoDataUrl: string): Promise<void> {
+  await transaction([ARTICLES], async (tx) => {
+    const store = tx.objectStore(ARTICLES);
+    const article = await requestResult<Article | undefined>(store.get(barcode));
+    if (article) store.put({ ...article, photoDataUrl });
+  });
 }
 
 export async function getQueue(): Promise<StockCommand[]> {
@@ -201,8 +198,20 @@ export async function replaceArticlesIfQueueEmpty(articles: Article[]): Promise<
     const commands = await requestResult<StockCommand[]>(tx.objectStore(QUEUE).getAll());
     if (commands.length) return false;
     const store = tx.objectStore(ARTICLES);
+    const currentArticles = await requestResult<Article[]>(store.getAll());
+    const photos = new Map<string, string>();
+    currentArticles.forEach((article) => {
+      if (article.photoFileId && article.photoDataUrl) {
+        photos.set(`${article.barcode}\u0000${article.photoFileId}`, article.photoDataUrl);
+      }
+    });
     store.clear();
-    for (const article of articles) store.put(article);
+    for (const article of articles) {
+      const cachedPhoto = article.photoFileId
+        ? photos.get(`${article.barcode}\u0000${article.photoFileId}`)
+        : undefined;
+      store.put(cachedPhoto ? { ...article, photoDataUrl: cachedPhoto } : article);
+    }
     return true;
   });
 }

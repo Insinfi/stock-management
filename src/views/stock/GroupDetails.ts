@@ -1,5 +1,6 @@
 import type { Article, GroupsFeatureViewState } from "../../types";
 import type { ViewContext } from "../view-context";
+import { renderArticleSymbol } from "./ArticleSymbol";
 
 interface GroupDetailsOptions {
   group: Article[];
@@ -63,7 +64,7 @@ export function renderGroupDetails(
       <div class="article-list">
         ${group.map((article) => `
           <article class="article-card group-member-card">
-            <div class="article-symbol" aria-hidden="true">${escapeHtml(article.name.slice(0, 1).toUpperCase())}</div>
+            ${renderArticleSymbol(article, escapeHtml)}
             <div class="article-info">
               <h3>${escapeHtml(article.name)}</h3>
               <p>${escapeHtml(article.barcode)}</p>
@@ -91,7 +92,7 @@ function renderChoice(
   return `
     <label class="article-card group-choice-card">
       <input type="checkbox" data-group-member-checkbox data-barcode="${escapeHtml(article.barcode)}" ${selectedBarcodes.includes(article.barcode) ? "checked" : ""} />
-      <span class="article-symbol" aria-hidden="true">${escapeHtml(article.name.slice(0, 1).toUpperCase())}</span>
+      ${renderArticleSymbol(article, escapeHtml)}
       <span class="article-info"><strong>${escapeHtml(article.name)}</strong><small>${escapeHtml(article.barcode)}</small></span>
       <span class="article-stock"><strong>${formatNumber(article.quantity)}</strong><span>${t("inStock")}</span></span>
     </label>

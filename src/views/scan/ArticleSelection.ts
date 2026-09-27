@@ -109,15 +109,14 @@ function renderPhoto(
   { t, escapeHtml }: Pick<ViewContext, "t" | "escapeHtml">,
   canChange: boolean
 ): string {
-  const source = article.photoDataUrl ??
-    (article.photoFileId
-      ? `https://drive.google.com/uc?export=view&id=${encodeURIComponent(article.photoFileId)}`
-      : "");
+  const photoPlaceholder = article.photoFileId
+    ? `<div class="article-photo-placeholder" data-photo-file-id="${escapeHtml(article.photoFileId)}" data-photo-fallback="${escapeHtml(article.name.slice(0, 1).toUpperCase())}" data-photo-variant="detail" data-photo-alt="${escapeHtml(t("articlePhotoAlt", { name: article.name }))}" aria-hidden="true">${escapeHtml(article.name.slice(0, 1).toUpperCase())}</div>`
+    : "";
   return `
     <div class="article-photo-section">
-      ${source
-        ? `<img class="article-photo" src="${escapeHtml(source)}" alt="${escapeHtml(t("articlePhotoAlt", { name: article.name }))}" loading="lazy" />`
-        : `<p class="article-photo-empty">${t("noArticlePhoto")}</p>`}
+      ${article.photoDataUrl
+        ? `<img class="article-photo" src="${escapeHtml(article.photoDataUrl)}" alt="${escapeHtml(t("articlePhotoAlt", { name: article.name }))}" loading="lazy" />`
+        : photoPlaceholder || `<p class="article-photo-empty">${t("noArticlePhoto")}</p>`}
       ${canChange ? `
         <div class="article-photo-actions">
           <label class="secondary-button photo-picker-button">${t("takePhoto")}

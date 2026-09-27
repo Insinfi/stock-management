@@ -7,6 +7,8 @@ import {
 } from "../../db";
 import type { Article, StockCommand } from "../../types";
 import type { TranslationKey } from "../../i18n";
+import { StockApi } from "../../api";
+import { createId } from "../../utils/id";
 
 type Translate = (key: TranslationKey, values?: Record<string, string | number>) => string;
 type Screen = "stock" | "scan";
@@ -14,6 +16,8 @@ type CreationDraft = { name: string; quantity: string };
 type ArticleDraft = { name: string; barcode: string } | undefined;
 
 export interface StockFeatureContext {
+  getEndpoint(): string;
+  isOnline(): boolean;
   getArticles(): Article[];
   getSelectedBarcode(): string;
   setSelectedBarcode(value: string): void;
@@ -39,7 +43,83 @@ export interface StockFeatureContext {
 }
 
 export class StockFeature {
+  private readonly photoCache = new Map<string, string>();
+  private readonly photoRequests = new Map<string, Promise<string>>();
+  private activePhotoRequests = 0;
+  private readonly photoRequestQueue: Array<() => void> = [];
+
   constructor(private readonly context: StockFeatureContext) {}
+
+  async loadPhotos(): Promise<void> {
+    const c = this.context;
+    if (!c.getEndpoint() || !c.isOnline()) return;
+    const fileIds = new Set(
+      Array.from(c.root.querySelectorAll<HTMLElement>("[data-photo-file-id]"))
+        .map((element) => element.dataset.photoFileId)
+        .filter((fileId): fileId is string => Boolean(fileId))
+    );
+    await Promise.all(Array.from(fileIds, async (fileId) => {
+      try {
+        const photo = await this.getPhoto(fileId);
+        this.renderPhoto(fileId, photo);
+      } catch (error) {
+        console.warn("Could not load an article photo.", error);
+      }
+    }));
+  }
+
+  private async getPhoto(fileId: string): Promise<string> {
+    const cached = this.photoCache.get(fileId);
+    if (cached) return cached;
+    const pending = this.photoRequests.get(fileId);
+    if (pending) return pending;
+
+    const request = this.withPhotoRequestSlot(
+      () => new StockApi(this.context.getEndpoint()).getPhoto(fileId)
+    ).then((photo) => {
+      this.photoCache.set(fileId, photo);
+      return photo;
+    }).finally(() => {
+      this.photoRequests.delete(fileId);
+    });
+    this.photoRequests.set(fileId, request);
+    return request;
+  }
+
+  private async withPhotoRequestSlot<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.activePhotoRequests >= 3) {
+      await new Promise<void>((resolve) => this.photoRequestQueue.push(resolve));
+    }
+    this.activePhotoRequests += 1;
+    try {
+      return await operation();
+    } finally {
+      this.activePhotoRequests -= 1;
+      this.photoRequestQueue.shift()?.();
+    }
+  }
+
+  private renderPhoto(fileId: string, source: string): void {
+    const c = this.context;
+    c.root.querySelectorAll<HTMLElement>("[data-photo-file-id]").forEach((placeholder) => {
+      if (placeholder.dataset.photoFileId !== fileId) return;
+      const variant = placeholder.dataset.photoVariant;
+      const image = document.createElement("img");
+      image.className = variant === "detail"
+        ? "article-photo"
+        : "article-symbol article-thumbnail";
+      image.src = source;
+      image.alt = placeholder.dataset.photoAlt ?? "";
+      image.loading = variant === "detail" ? "eager" : "lazy";
+      if (variant !== "detail") image.setAttribute("aria-hidden", "true");
+      const fallback = placeholder.cloneNode(true);
+      image.addEventListener("error", () => {
+        this.photoCache.delete(fileId);
+        image.replaceWith(fallback);
+      }, { once: true });
+      placeholder.replaceWith(image);
+    });
+  }
 
   async handleSubmit(form: HTMLFormElement): Promise<boolean> {
     const kind = form.dataset.form;
@@ -165,7 +245,7 @@ export class StockFeature {
         updatedAt: new Date().toISOString()
       };
       const command: StockCommand = {
-        id: crypto.randomUUID(),
+        id: createId(),
         kind: "set-photo",
         barcode,
         photoDataUrl,
@@ -203,7 +283,7 @@ export class StockFeature {
       updatedAt: new Date().toISOString()
     };
     const command: StockCommand = {
-      id: crypto.randomUUID(),
+      id: createId(),
       kind: "create",
       barcode: article.barcode,
       name,
@@ -238,7 +318,7 @@ export class StockFeature {
     if (!Number.isSafeInteger(nextQuantity) || nextQuantity < 0) throw new Error(c.t("quantityRange"));
     const updated: Article = { ...article, quantity: nextQuantity, updatedAt: new Date().toISOString() };
     const command: StockCommand = {
-      id: crypto.randomUUID(),
+      id: createId(),
       kind: "movement",
       barcode: article.barcode,
       movementType,
@@ -274,7 +354,7 @@ export class StockFeature {
     if (duplicate) throw new Error(c.t("duplicateBarcode"));
     const updated: Article = { ...original, barcode, name, updatedAt: new Date().toISOString() };
     const command: StockCommand = {
-      id: crypto.randomUUID(),
+      id: createId(),
       kind: "update",
       previousBarcode: original.barcode,
       barcode,
@@ -305,7 +385,7 @@ export class StockFeature {
     if (!article) throw new Error(c.t("articleMissing"));
     if (!window.confirm(c.t("deleteArticleConfirm", { name: article.name }))) return;
     const command: StockCommand = {
-      id: crypto.randomUUID(),
+      id: createId(),
       kind: "delete",
       barcode: article.barcode,
       createdAt: new Date().toISOString()
@@ -326,8 +406,7 @@ export class StockFeature {
     const existing = new Set(c.getArticles().map((article) => article.barcode));
     let barcode: string;
     do {
-      const random = crypto.getRandomValues(new Uint8Array(8));
-      const suffix = Array.from(random, (value) => "0123456789ABCDEFGHJKMNPQRSTVWXYZ"[value & 31]).join("");
+      const suffix = createId().replace(/-/g, "").slice(0, 16).toUpperCase();
       barcode = `SM-${Date.now().toString(36).toUpperCase()}-${suffix}`;
     } while (existing.has(barcode));
 
@@ -359,7 +438,7 @@ async function compressPhoto(file: File, t: Translate): Promise<string> {
   if (!file.type.startsWith("image/")) throw new Error(t("photoProcessingFailed"));
   const bitmap = await createImageBitmap(file);
   try {
-    const maxDimension = 1200;
+    const maxDimension = 800;
     const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(bitmap.width * scale));
@@ -373,10 +452,10 @@ async function compressPhoto(file: File, t: Translate): Promise<string> {
           ? resolve(result)
           : reject(new Error(t("photoProcessingFailed"))),
         "image/jpeg",
-        0.72
+        0.6
       );
     });
-    if (blob.size > 450_000) throw new Error(t("photoTooLarge"));
+    if (blob.size > 250_000) throw new Error(t("photoTooLarge"));
     return await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => typeof reader.result === "string"

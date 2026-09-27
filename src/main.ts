@@ -61,6 +61,8 @@ const groupsFeature = new GroupsFeature({
 });
 
 const stockFeature = new StockFeature({
+  getEndpoint: () => endpoint,
+  isOnline: () => navigator.onLine,
   getArticles: () => articles,
   getSelectedBarcode: () => selectedBarcode,
   setSelectedBarcode: (value) => { selectedBarcode = value; },
@@ -245,6 +247,7 @@ function render(): void {
       ${document.querySelector(".settings-dialog") ? renderSettings() : ""}
     </div>
   `;
+  void stockFeature.loadPhotos();
   const searchInput = focusedSearchName
     ? appRoot.querySelector<HTMLInputElement>(`input[name="${focusedSearchName}"]`)
     : null;

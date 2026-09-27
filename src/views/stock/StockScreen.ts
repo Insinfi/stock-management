@@ -1,6 +1,7 @@
 import type { Article, GroupsFeatureViewState, StockCommand } from "../../types";
 import type { ViewContext } from "../view-context";
 import { renderGroupDetails } from "./GroupDetails";
+import { renderArticleSymbol } from "./ArticleSymbol";
 
 interface StockScreenOptions {
   articles: Article[];
@@ -135,7 +136,7 @@ function renderArticle(article: Article, groupState: GroupsFeatureViewState, { t
   return `
     <article class="article-card ${groupState.selectingMembers ? "article-card-selecting" : ""}">
       ${groupState.selectingMembers ? `<input class="group-member-checkbox" type="checkbox" data-group-member-checkbox data-barcode="${escapeHtml(article.barcode)}" ${groupState.selectedBarcodes.includes(article.barcode) ? "checked" : ""} aria-label="${escapeHtml(t("selectGroupMember", { name: article.name }))}" />` : ""}
-      <div class="article-symbol" aria-hidden="true">${escapeHtml(article.name.slice(0, 1).toUpperCase())}</div>
+      ${renderArticleSymbol(article, escapeHtml)}
       <div class="article-info">
         <h3>${escapeHtml(article.name)}</h3>
         <p>${escapeHtml(article.barcode)}</p>

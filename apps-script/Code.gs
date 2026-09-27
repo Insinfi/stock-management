@@ -12,6 +12,34 @@ function setupStockroom() {
 
 function doGet(event) {
   const parameters = (event && event.parameter) || {};
+  if (parameters.action === "getPhoto" && parameters.nonce) {
+    try {
+      const folderId = PropertiesService.getScriptProperties().getProperty("STOCKROOM_IMAGES_FOLDER_ID");
+      if (!folderId || !/^[\w-]{10,200}$/.test(String(parameters.fileId || ""))) {
+        throw new Error("Invalid article photo request.");
+      }
+      const file = DriveApp.getFileById(parameters.fileId);
+      const parents = file.getParents();
+      let belongsToImagesFolder = false;
+      while (parents.hasNext()) {
+        if (parents.next().getId() === folderId) {
+          belongsToImagesFolder = true;
+          break;
+        }
+      }
+      if (!belongsToImagesFolder) throw new Error("The requested photo is not in the Stockroom Images folder.");
+      const blob = file.getBlob();
+      const bytes = blob.getBytes();
+      if (blob.getContentType() !== "image/jpeg" || bytes.length > 250000) {
+        throw new Error("The article photo is invalid or too large.");
+      }
+      const photo = "data:image/jpeg;base64," + Utilities.base64Encode(bytes);
+      return response_(parameters.nonce, true, photo);
+    } catch (error) {
+      return response_(parameters.nonce, false, null, error.message || "Could not read the article photo.");
+    }
+  }
+
   if (parameters.action !== "getStock" || !parameters.nonce) {
     return response_(parameters.nonce || "", false, null, "Unknown stock action.");
   }
@@ -283,7 +311,7 @@ function applyCommand_(command) {
     if (!folderId) throw new Error("Run setupStockroom to configure the shared photo folder.");
     const encoded = command.photoDataUrl.split(",")[1];
     const bytes = Utilities.base64Decode(encoded);
-    if (bytes.length > 450000) throw new Error("The compressed photo exceeds the size limit.");
+    if (bytes.length > 250000) throw new Error("The compressed photo exceeds the size limit.");
     const folder = DriveApp.getFolderById(folderId);
     const imageName = "stockroom-" + command.id + ".jpg";
     const matchingImages = folder.getFilesByName(imageName);
@@ -393,7 +421,7 @@ function validateCommand_(command) {
   if (command.kind === "set-photo") {
     if (
       typeof command.photoDataUrl !== "string" ||
-      command.photoDataUrl.length > 620000 ||
+      command.photoDataUrl.length > 340000 ||
       !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(command.photoDataUrl) ||
       !command.createdAt ||
       isNaN(new Date(command.createdAt).getTime())

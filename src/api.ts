@@ -1,4 +1,5 @@
 import type { ApiResult, Article, StockCommand } from "./types";
+import { createId } from "./utils/id";
 
 const RESPONSE_TIMEOUT_MS = 20_000;
 
@@ -9,7 +10,7 @@ function frameRequest<T>(
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const url = new URL(endpoint);
-    const nonce = crypto.randomUUID();
+    const nonce = createId();
     const frame = document.createElement("iframe");
     const frameName = `stockroom-${nonce}`;
     frame.name = frameName;
@@ -94,10 +95,12 @@ export class StockApi {
         value.quantity < 0 ||
         typeof value.updatedAt !== "string" ||
         (value.groupId !== undefined && (typeof value.groupId !== "string" || !value.groupId.trim())) ||
-        (value.groupName !== undefined && (typeof value.groupName !== "string" || !value.groupName.trim()))
+        (value.groupName !== undefined && (typeof value.groupName !== "string" || !value.groupName.trim())) ||
+        (value.photoFileId !== undefined && (typeof value.photoFileId !== "string" || !/^[\w-]{10,200}$/.test(value.photoFileId)))
       ) {
         throw new Error("The stock service returned invalid article data.");
       }
+
       const article: Article = {
         barcode: value.barcode,
         name: value.name,
@@ -122,6 +125,7 @@ export class StockApi {
       } else if (value.groupId || value.groupName) {
         throw new Error("The stock service returned incomplete group data.");
       }
+      if (value.photoFileId) article.photoFileId = value.photoFileId;
       return article;
     });
     const barcodes = new Set<string>();
@@ -132,6 +136,22 @@ export class StockApi {
       barcodes.add(article.barcode);
     }
     return articles;
+  }
+
+  async getPhoto(fileId: string): Promise<string> {
+    const photo = await frameRequest<unknown>(
+      this.endpoint,
+      { action: "getPhoto", fileId },
+      "GET"
+    );
+    if (
+      typeof photo !== "string" ||
+      photo.length > 340000 ||
+      !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(photo)
+    ) {
+      throw new Error("The stock service returned invalid article photo data.");
+    }
+    return photo;
   }
 
   async send(command: StockCommand): Promise<void> {

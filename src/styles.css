@@ -102,9 +102,18 @@ h3 { font: 700 14px var(--sans-display); }
   display: grid; flex: 0 0 42px; height: 42px; place-items: center; border-radius: 13px;
   background: #eef3eb; color: #537752; font: 700 15px var(--sans-display);
 }
+.article-thumbnail { object-fit: cover; }
 .article-info { min-width: 0; }
 .article-info h3 { overflow: hidden; margin: 0 0 4px; text-overflow: ellipsis; white-space: nowrap; }
 .article-info p { margin: 0; color: #89938c; font-size: 11px; letter-spacing: .3px; }
+.article-photo-section { display: grid; gap: 10px; margin: 16px 0; }
+.article-photo { display: block; width: 100%; max-height: 300px; object-fit: contain; border: 1px solid var(--line); border-radius: 14px; background: #f7f8f5; }
+.article-photo-placeholder { display: grid; min-height: 180px; place-items: center; border: 1px solid var(--line); border-radius: 14px; background: #eef3eb; color: #537752; font: 700 42px var(--sans-display); }
+.article-photo-empty { margin: 0; padding: 22px; border: 1px dashed #d8ded6; border-radius: 14px; color: var(--muted); font-size: 12px; text-align: center; }
+.article-photo-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.photo-picker-button { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 40px; overflow: hidden; cursor: pointer; }
+.photo-picker-button input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.photo-help { margin: 0; color: var(--muted); font-size: 11px; }
 .article-stock { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-left: auto; white-space: nowrap; }
 .article-stock strong { font: 700 16px var(--sans-display); }
 .article-stock span { color: #89938c; font-size: 10px; }

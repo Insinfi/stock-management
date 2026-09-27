@@ -4,7 +4,9 @@ import { VitePWA } from "vite-plugin-pwa";
 export default defineConfig({
   base: process.env.GITHUB_ACTIONS === "true" ? "/stock-management/" : "/",
   define: {
-    __APP_VERSION__: JSON.stringify(process.env.GITHUB_SHA?.slice(0, 7) ?? "dev")
+    __APP_VERSION__: JSON.stringify(process.env.GITHUB_RUN_NUMBER
+      ? `#${process.env.GITHUB_RUN_NUMBER}`
+      : "dev")
   },
   server: {
     allowedHosts: ["01e9-94-106-224-120.ngrok-free.app"]

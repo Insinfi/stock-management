@@ -1,6 +1,7 @@
 import { commitGroupChange } from "../../db";
 import type { Article, GroupsFeatureViewState, StockCommand } from "../../types";
 import type { TranslationKey } from "../../i18n";
+import { createId } from "../../utils/id";
 
 type Translate = (key: TranslationKey, values?: Record<string, string | number>) => string;
 
@@ -9,6 +10,7 @@ export interface GroupsFeatureContext {
   setNotice(value: string): void;
   t: Translate;
   render(): void;
+  replaceNavigation(): void;
   refreshLocalData(): Promise<void>;
   synchronize(): Promise<void>;
 }
@@ -37,6 +39,15 @@ export class GroupsFeature {
     this.stopSelecting();
   }
 
+  restore(state: GroupsFeatureViewState): void {
+    this.activeGroupId = state.activeGroupId;
+    this.selectingMembers = state.selectingMembers;
+    this.targetGroupId = state.targetGroupId;
+    this.selectedBarcodes.clear();
+    state.selectedBarcodes.forEach((barcode) => this.selectedBarcodes.add(barcode));
+    this.groupNameDraft = state.groupNameDraft;
+  }
+
   toggleMember(barcode: string, selected: boolean): void {
     if (!this.selectingMembers) return;
     if (selected) this.selectedBarcodes.add(barcode);
@@ -54,12 +65,13 @@ export class GroupsFeature {
     if (name.length > 120) throw new Error(this.context.t("groupNameTooLong"));
     if (this.selectedBarcodes.size < 2) throw new Error(this.context.t("groupNeedsItems"));
 
-    const id = crypto.randomUUID();
+    const id = createId();
     const selected = [...this.selectedBarcodes];
     await this.setGroup(id, name, selected);
     this.context.setNotice(this.context.t("groupCreated", { name }));
     this.activeGroupId = id;
     this.stopSelecting();
+    this.context.replaceNavigation();
     this.context.render();
     void this.context.synchronize();
     return true;
@@ -134,6 +146,7 @@ export class GroupsFeature {
     await this.setGroup(groupId, groupName, [...this.selectedBarcodes]);
     this.context.setNotice(this.context.t("groupItemsAdded", { count: this.selectedBarcodes.size }));
     this.stopSelecting();
+    this.context.replaceNavigation();
     this.context.render();
     void this.context.synchronize();
   }
@@ -150,7 +163,7 @@ export class GroupsFeature {
 
     const updated = members.map((article) => ({ ...article, groupId, groupName }));
     const command: StockCommand = {
-      id: crypto.randomUUID(),
+      id: createId(),
       kind: "set-group",
       groupId,
       groupName,
@@ -173,7 +186,7 @@ export class GroupsFeature {
       updates.push({ ...remaining[0], groupId: undefined, groupName: undefined });
     }
     const command: StockCommand = {
-      id: crypto.randomUUID(),
+      id: createId(),
       kind: "remove-group-member",
       groupId,
       barcode,
@@ -187,6 +200,7 @@ export class GroupsFeature {
         : c.t("groupMemberRemoved", { name: member.name })
     );
     if (remaining.length <= 1) this.activeGroupId = undefined;
+    c.replaceNavigation();
     c.render();
     void c.synchronize();
   }

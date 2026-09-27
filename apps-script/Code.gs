@@ -1,16 +1,45 @@
-const ARTICLE_HEADERS = ["barcode", "name", "quantity", "updated_at", "last_command_id", "group_id", "group_name"];
+const ARTICLE_BASE_HEADERS = ["barcode", "name", "quantity", "updated_at", "last_command_id"];
+const ARTICLE_HEADERS = ARTICLE_BASE_HEADERS.concat(["group_id", "group_name", "photo_file_id"]);
 const MOVEMENT_HEADERS = ["id", "timestamp", "barcode", "name", "type", "quantity", "delta"];
+const SCHEMA_VERSION = 2;
 
 function setupStockroom() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   if (!spreadsheet) throw new Error("Open this script from its bound Google Sheet before setup.");
   PropertiesService.getScriptProperties().setProperty("STOCKROOM_SPREADSHEET_ID", spreadsheet.getId());
-  getSheet_("Articles", ARTICLE_HEADERS);
-  getSheet_("Movements", MOVEMENT_HEADERS);
+  migrateStockroom_();
 }
 
 function doGet(event) {
   const parameters = (event && event.parameter) || {};
+  if (parameters.action === "getPhoto" && parameters.nonce) {
+    try {
+      const folderId = PropertiesService.getScriptProperties().getProperty("STOCKROOM_IMAGES_FOLDER_ID");
+      if (!folderId || !/^[\w-]{10,200}$/.test(String(parameters.fileId || ""))) {
+        throw new Error("Invalid article photo request.");
+      }
+      const file = DriveApp.getFileById(parameters.fileId);
+      const parents = file.getParents();
+      let belongsToImagesFolder = false;
+      while (parents.hasNext()) {
+        if (parents.next().getId() === folderId) {
+          belongsToImagesFolder = true;
+          break;
+        }
+      }
+      if (!belongsToImagesFolder) throw new Error("The requested photo is not in the Stockroom Images folder.");
+      const blob = file.getBlob();
+      const bytes = blob.getBytes();
+      if (blob.getContentType() !== "image/jpeg" || bytes.length > 250000) {
+        throw new Error("The article photo is invalid or too large.");
+      }
+      const photo = "data:image/jpeg;base64," + Utilities.base64Encode(bytes);
+      return response_(parameters.nonce, true, photo);
+    } catch (error) {
+      return response_(parameters.nonce, false, null, error.message || "Could not read the article photo.");
+    }
+  }
+
   if (parameters.action !== "getStock" || !parameters.nonce) {
     return response_(parameters.nonce || "", false, null, "Unknown stock action.");
   }
@@ -19,29 +48,38 @@ function doGet(event) {
     const lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
+      migrateStockroom_();
       const sheet = getSheet_("Articles", ARTICLE_HEADERS);
       const lastRow = sheet.getLastRow();
-      const rows = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, ARTICLE_HEADERS.length).getValues() : [];
+      const rows = lastRow > 1 ? sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues() : [];
+      const barcodeColumn = headerColumn_(sheet, "barcode") - 1;
+      const groupIdColumn = headerColumn_(sheet, "group_id") - 1;
+      const groupNameColumn = headerColumn_(sheet, "group_name") - 1;
+      const quantityColumn = headerColumn_(sheet, "quantity") - 1;
+      const nameColumn = headerColumn_(sheet, "name") - 1;
+      const updatedAtColumn = headerColumn_(sheet, "updated_at") - 1;
+      const photoColumn = headerColumn_(sheet, "photo_file_id") - 1;
       const groupCounts = Object.create(null);
       rows.forEach(function (row) {
-        if (row[5] && row[6]) {
-          const groupId = String(row[5]);
+        if (row[groupIdColumn] && row[groupNameColumn]) {
+          const groupId = String(row[groupIdColumn]);
           groupCounts[groupId] = (groupCounts[groupId] || 0) + 1;
         }
       });
       const articles = rows
-        .filter(function (row) { return row[0] !== ""; })
+        .filter(function (row) { return row[barcodeColumn] !== ""; })
         .map(function (row) {
           const article = {
-            barcode: String(row[0]),
-            name: String(row[1]),
-            quantity: Number(row[2]) || 0,
-            updatedAt: row[3] instanceof Date ? row[3].toISOString() : String(row[3] || "")
+            barcode: String(row[barcodeColumn]),
+            name: String(row[nameColumn]),
+            quantity: Number(row[quantityColumn]) || 0,
+            updatedAt: row[updatedAtColumn] instanceof Date ? row[updatedAtColumn].toISOString() : String(row[updatedAtColumn] || "")
           };
-          if (row[5] && row[6] && groupCounts[String(row[5])] > 1) {
-            article.groupId = String(row[5]);
-            article.groupName = String(row[6]);
+          if (row[groupIdColumn] && row[groupNameColumn] && groupCounts[String(row[groupIdColumn])] > 1) {
+            article.groupId = String(row[groupIdColumn]);
+            article.groupName = String(row[groupNameColumn]);
           }
+          if (row[photoColumn]) article.photoFileId = String(row[photoColumn]);
           return article;
         });
       return response_(parameters.nonce, true, articles);
@@ -64,6 +102,7 @@ function doPost(event) {
     const lock = LockService.getScriptLock();
     lock.waitLock(20000);
     try {
+      migrateStockroom_();
       const result = applyCommand_(command);
       return response_(parameters.nonce, true, result);
     } finally {
@@ -83,9 +122,10 @@ function applyCommand_(command) {
     if (command.kind === "delete") {
       const deletedRow = findArticleRow_(articles, command.barcode);
       if (deletedRow >= 2) {
-        const deleted = articles.getRange(deletedRow, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
+        const deleted = getArticleRow_(articles, deletedRow);
         articles.deleteRow(deletedRow);
-        clearSingletonGroup_(articles, String(deleted[5] || ""));
+        clearSingletonGroup_(articles, String(deleted.group_id || ""));
+        if (deleted.photo_file_id) DriveApp.getFileById(String(deleted.photo_file_id)).setTrashed(true);
       }
     }
     return true;
@@ -101,11 +141,11 @@ function applyCommand_(command) {
 
   if (command.kind === "create") {
     if (rowNumber > 0) {
-      const existing = articles.getRange(rowNumber, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
-      if (String(existing[4]) !== command.id) {
+      const existing = getArticleRow_(articles, rowNumber);
+      if (String(existing.last_command_id) !== command.id) {
         throw new Error("An article with this barcode already exists.");
       }
-      articleName = String(existing[1]);
+      articleName = String(existing.name);
       quantity = command.quantity;
       movementType = "opening";
       delta = quantity;
@@ -114,14 +154,20 @@ function applyCommand_(command) {
       quantity = command.quantity;
       movementType = "opening";
       delta = quantity;
-      articles.appendRow([command.barcode, articleName, quantity, timestamp, command.id]);
+      appendArticle_(articles, {
+        barcode: command.barcode,
+        name: articleName,
+        quantity: quantity,
+        updated_at: timestamp,
+        last_command_id: command.id
+      });
     }
   } else if (command.kind === "movement") {
     if (rowNumber < 2) throw new Error("This barcode is not registered in the stock sheet.");
-    const row = articles.getRange(rowNumber, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
-    articleName = String(row[1]);
-    const previousQuantity = Number(row[2]);
-    if (String(row[4]) === command.id) {
+    const row = getArticleRow_(articles, rowNumber);
+    articleName = String(row.name);
+    const previousQuantity = Number(row.quantity);
+    if (String(row.last_command_id) === command.id) {
       quantity = command.quantity;
       movementType = command.movementType;
       delta = movementType === "add" ? quantity : -quantity;
@@ -133,47 +179,64 @@ function applyCommand_(command) {
       if (!Number.isSafeInteger(nextQuantity) || nextQuantity < 0) {
         throw new Error("The movement would make stock negative.");
       }
-      articles.getRange(rowNumber, 3, 1, 3).setValues([[nextQuantity, timestamp, command.id]]);
+      setArticleFields_(articles, rowNumber, {
+        quantity: nextQuantity,
+        updated_at: timestamp,
+        last_command_id: command.id
+      });
     }
   } else if (command.kind === "update") {
     if (rowNumber < 2) {
       rowNumber = findArticleRow_(articles, command.barcode);
       if (rowNumber < 2) throw new Error("This article is not registered in the stock sheet.");
-      const current = articles.getRange(rowNumber, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
-      if (String(current[4]) !== command.id) {
+      const current = getArticleRow_(articles, rowNumber);
+      if (String(current.last_command_id) !== command.id) {
         throw new Error("This article changed before the update could be applied.");
       }
-      articleName = String(current[1]);
+      articleName = String(current.name);
     } else {
-      const current = articles.getRange(rowNumber, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
+      const current = getArticleRow_(articles, rowNumber);
       const targetRow = findArticleRow_(articles, command.barcode);
       if (targetRow >= 2 && targetRow !== rowNumber) {
         throw new Error("An article with this barcode already exists.");
       }
       articleName = command.name.trim();
-      articles.getRange(rowNumber, 1, 1, 5).setValues([
-        [command.barcode, articleName, Number(current[2]) || 0, timestamp, command.id]
-      ]);
+      setArticleFields_(articles, rowNumber, {
+        barcode: command.barcode,
+        name: articleName,
+        quantity: Number(current.quantity) || 0,
+        updated_at: timestamp,
+        last_command_id: command.id
+      });
     }
     movementType = "edit";
     quantity = 0;
     delta = 0;
   } else if (command.kind === "delete") {
     if (rowNumber < 2) throw new Error("This article is not registered in the stock sheet.");
-    const current = articles.getRange(rowNumber, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
-    articleName = String(current[1]);
-    quantity = Number(current[2]) || 0;
+    const current = getArticleRow_(articles, rowNumber);
+    articleName = String(current.name);
+    quantity = Number(current.quantity) || 0;
     movementType = "delete";
     delta = -quantity;
-    movements.appendRow([command.id, timestamp, command.barcode, articleName, movementType, quantity, delta]);
+    appendMovement_(movements, {
+      id: command.id,
+      timestamp: timestamp,
+      barcode: command.barcode,
+      name: articleName,
+      type: movementType,
+      quantity: quantity,
+      delta: delta
+    });
     articles.deleteRow(rowNumber);
-    clearSingletonGroup_(articles, String(current[5] || ""));
+    clearSingletonGroup_(articles, String(current.group_id || ""));
+    if (current.photo_file_id) DriveApp.getFileById(String(current.photo_file_id)).setTrashed(true);
     return true;
   } else if (command.kind === "set-group") {
     const rows = [];
     const currentGroupRows = findGroupRows_(articles, command.groupId);
     currentGroupRows.forEach(function (groupRow) {
-      const existingGroupName = articles.getRange(groupRow, 7).getValue();
+      const existingGroupName = getArticleRow_(articles, groupRow).group_name;
       if (existingGroupName && String(existingGroupName) !== command.groupName.trim()) {
         throw new Error("The group name changed before the update could be applied.");
       }
@@ -181,37 +244,108 @@ function applyCommand_(command) {
     command.barcodes.forEach(function (barcode) {
       const memberRow = findArticleRow_(articles, barcode);
       if (memberRow < 2) throw new Error("A selected article is no longer in the stock sheet.");
-      const member = articles.getRange(memberRow, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
+      const member = getArticleRow_(articles, memberRow);
       if (
-        member[5] &&
-        String(member[5]) !== command.groupId &&
-        countGroupMembers_(articles, String(member[5])) > 1
+        member.group_id &&
+        String(member.group_id) !== command.groupId &&
+        countGroupMembers_(articles, String(member.group_id)) > 1
       ) {
         throw new Error("A selected article already belongs to another group.");
       }
       rows.push(memberRow);
     });
     rows.forEach(function (memberRow) {
-      articles.getRange(memberRow, 6, 1, 2).setValues([[command.groupId, command.groupName.trim()]]);
+      setArticleFields_(articles, memberRow, {
+        group_id: command.groupId,
+        group_name: command.groupName.trim()
+      });
     });
-    movements.appendRow([command.id, timestamp, "", command.groupName.trim(), "group", rows.length, 0]);
+    appendMovement_(movements, {
+      id: command.id,
+      timestamp: timestamp,
+      barcode: "",
+      name: command.groupName.trim(),
+      type: "group",
+      quantity: rows.length,
+      delta: 0
+    });
     return true;
   } else if (command.kind === "remove-group-member") {
     if (rowNumber < 2) throw new Error("This article is no longer in the stock sheet.");
-    const current = articles.getRange(rowNumber, 1, 1, ARTICLE_HEADERS.length).getValues()[0];
-    if (current[5] && String(current[5]) !== command.groupId) {
+    const current = getArticleRow_(articles, rowNumber);
+    if (current.group_id && String(current.group_id) !== command.groupId) {
       throw new Error("This article no longer belongs to that group.");
     }
-    if (String(current[5] || "") === command.groupId) {
-      articles.getRange(rowNumber, 6, 1, 2).clearContent();
+    if (String(current.group_id || "") === command.groupId) {
+      setArticleFields_(articles, rowNumber, { group_id: "", group_name: "" });
     }
     clearSingletonGroup_(articles, command.groupId);
-    movements.appendRow([command.id, timestamp, command.barcode, String(current[1]), "ungroup", 0, 0]);
+    appendMovement_(movements, {
+      id: command.id,
+      timestamp: timestamp,
+      barcode: command.barcode,
+      name: String(current.name),
+      type: "ungroup",
+      quantity: 0,
+      delta: 0
+    });
+    return true;
+  } else if (command.kind === "set-photo") {
+    if (rowNumber < 2) throw new Error("This article is no longer in the stock sheet.");
+    const current = getArticleRow_(articles, rowNumber);
+    if (String(current.last_command_id || "") === command.id) {
+      if (!hasMovement_(movements, command.id)) {
+        appendMovement_(movements, {
+          id: command.id,
+          timestamp: timestamp,
+          barcode: command.barcode,
+          name: String(current.name),
+          type: "photo",
+          quantity: 0,
+          delta: 0
+        });
+      }
+      return true;
+    }
+    const folderId = PropertiesService.getScriptProperties().getProperty("STOCKROOM_IMAGES_FOLDER_ID");
+    if (!folderId) throw new Error("Run setupStockroom to configure the shared photo folder.");
+    const encoded = command.photoDataUrl.split(",")[1];
+    const bytes = Utilities.base64Decode(encoded);
+    if (bytes.length > 250000) throw new Error("The compressed photo exceeds the size limit.");
+    const folder = DriveApp.getFolderById(folderId);
+    const imageName = "stockroom-" + command.id + ".jpg";
+    const matchingImages = folder.getFilesByName(imageName);
+    const image = matchingImages.hasNext()
+      ? matchingImages.next()
+      : folder.createFile(Utilities.newBlob(bytes, "image/jpeg", imageName));
+    setArticleFields_(articles, rowNumber, {
+      photo_file_id: image.getId(),
+      last_command_id: command.id,
+      updated_at: timestamp
+    });
+    appendMovement_(movements, {
+      id: command.id,
+      timestamp: timestamp,
+      barcode: command.barcode,
+      name: String(current.name),
+      type: "photo",
+      quantity: 0,
+      delta: 0
+    });
+    if (current.photo_file_id) DriveApp.getFileById(String(current.photo_file_id)).setTrashed(true);
     return true;
   }
 
   if (!hasMovement_(movements, command.id)) {
-    movements.appendRow([command.id, timestamp, command.barcode, articleName, movementType, quantity, delta]);
+    appendMovement_(movements, {
+      id: command.id,
+      timestamp: timestamp,
+      barcode: command.barcode,
+      name: articleName,
+      type: movementType,
+      quantity: quantity,
+      delta: delta
+    });
   }
   return true;
 }
@@ -284,6 +418,18 @@ function validateCommand_(command) {
     }
     return;
   }
+  if (command.kind === "set-photo") {
+    if (
+      typeof command.photoDataUrl !== "string" ||
+      command.photoDataUrl.length > 340000 ||
+      !/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(command.photoDataUrl) ||
+      !command.createdAt ||
+      isNaN(new Date(command.createdAt).getTime())
+    ) {
+      throw new Error("Invalid article photo.");
+    }
+    return;
+  }
   if (
     command.kind !== "movement" ||
     (command.movementType !== "add" && command.movementType !== "remove") ||
@@ -296,51 +442,137 @@ function validateCommand_(command) {
   }
 }
 
-function getSheet_(name, headers) {
+function migrateStockroom_() {
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty("STOCKROOM_SPREADSHEET_ID");
   if (!spreadsheetId) throw new Error("Run setupStockroom from the bound sheet's Apps Script editor first.");
   const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  const properties = PropertiesService.getScriptProperties();
+  const currentVersion = Number(properties.getProperty("STOCKROOM_SCHEMA_VERSION")) || 0;
+
+  if (currentVersion < 1) ensureSheetHeaders_(spreadsheet, "Articles", ["group_id", "group_name"]);
+  if (currentVersion < 2) ensureSheetHeaders_(spreadsheet, "Articles", ["photo_file_id"]);
+  ensureSheetHeaders_(spreadsheet, "Articles", ARTICLE_HEADERS);
+  ensureSheetHeaders_(spreadsheet, "Movements", MOVEMENT_HEADERS);
+  ensureImagesFolder_(spreadsheetId);
+  properties.setProperty("STOCKROOM_SCHEMA_VERSION", String(SCHEMA_VERSION));
+}
+
+function ensureImagesFolder_(spreadsheetId) {
+  const properties = PropertiesService.getScriptProperties();
+  const existingId = properties.getProperty("STOCKROOM_IMAGES_FOLDER_ID");
+  if (existingId) {
+    try {
+      DriveApp.getFolderById(existingId).getName();
+      return;
+    } catch (error) {
+      console.warn("The configured Stockroom Images folder is unavailable; creating a replacement.", error);
+      properties.deleteProperty("STOCKROOM_IMAGES_FOLDER_ID");
+    }
+  }
+  const spreadsheetFile = DriveApp.getFileById(spreadsheetId);
+  const parents = spreadsheetFile.getParents();
+  const parent = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+  const folder = parent.createFolder("Stockroom Images");
+  properties.setProperty("STOCKROOM_IMAGES_FOLDER_ID", folder.getId());
+}
+
+function ensureSheetHeaders_(spreadsheet, name, requiredHeaders) {
   let sheet = spreadsheet.getSheetByName(name);
   if (!sheet) sheet = spreadsheet.insertSheet(name);
   if (sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
     sheet.setFrozenRows(1);
-  } else {
-    const currentHeaders = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-    const legacyHeaderCount = name === "Articles" ? 5 : headers.length;
-    if (headers.slice(0, legacyHeaderCount).some(function (header, index) { return currentHeaders[index] !== header; })) {
-      throw new Error("The " + name + " sheet has unexpected columns. Do not rename its header row.");
-    }
-    for (let index = legacyHeaderCount; index < headers.length; index += 1) {
-      if (currentHeaders[index] && currentHeaders[index] !== headers[index]) {
-        throw new Error("The " + name + " sheet has unexpected columns. Do not rename its header row.");
-      }
-      if (!currentHeaders[index]) {
-        sheet.getRange(1, index + 1).setValue(headers[index]);
-      }
-    }
+    return sheet;
   }
+
+  let headers = readHeaders_(sheet);
+  requiredHeaders.forEach(function (header) {
+    if (headers.indexOf(header) < 0) {
+      const column = sheet.getLastColumn() + 1;
+      sheet.getRange(1, column).setValue(header);
+      headers.push(header);
+    }
+  });
+  return sheet;
+}
+
+function getSheet_(name, headers) {
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty("STOCKROOM_SPREADSHEET_ID");
+  if (!spreadsheetId) throw new Error("Run setupStockroom from the bound sheet's Apps Script editor first.");
+  const sheet = ensureSheetHeaders_(SpreadsheetApp.openById(spreadsheetId), name, headers);
   if (name === "Articles") {
-    sheet.getRange("A:B").setNumberFormat("@");
-    sheet.getRange("F:G").setNumberFormat("@");
-  } else {
-    sheet.getRange("C:D").setNumberFormat("@");
+    ["barcode", "group_id", "group_name", "photo_file_id"].forEach(function (header) {
+      sheet.getRange(1, headerColumn_(sheet, header), sheet.getMaxRows(), 1).setNumberFormat("@");
+    });
   }
   return sheet;
+}
+
+function readHeaders_(sheet) {
+  const columnCount = sheet.getLastColumn();
+  if (columnCount < 1) return [];
+  const headers = sheet.getRange(1, 1, 1, columnCount).getValues()[0].map(function (value) {
+    return String(value || "").trim();
+  });
+  const seen = Object.create(null);
+  headers.forEach(function (header) {
+    if (!header) return;
+    if (seen[header]) throw new Error("The " + sheet.getName() + " sheet contains a duplicate " + header + " column.");
+    seen[header] = true;
+  });
+  return headers;
+}
+
+function headerColumn_(sheet, header) {
+  const index = readHeaders_(sheet).indexOf(header);
+  if (index < 0) throw new Error("The " + sheet.getName() + " sheet is missing the " + header + " column.");
+  return index + 1;
+}
+
+function getArticleRow_(sheet, rowNumber) {
+  const values = sheet.getRange(rowNumber, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const headers = readHeaders_(sheet);
+  const record = {};
+  headers.forEach(function (header, index) {
+    if (header) record[header] = values[index];
+  });
+  return record;
+}
+
+function setArticleFields_(sheet, rowNumber, fields) {
+  Object.keys(fields).forEach(function (header) {
+    sheet.getRange(rowNumber, headerColumn_(sheet, header)).setValue(fields[header]);
+  });
+}
+
+function appendArticle_(sheet, fields) {
+  appendRecord_(sheet, fields);
+}
+
+function appendMovement_(sheet, fields) {
+  appendRecord_(sheet, fields);
+}
+
+function appendRecord_(sheet, fields) {
+  const headers = readHeaders_(sheet);
+  const row = headers.map(function (header) {
+    return Object.prototype.hasOwnProperty.call(fields, header) ? fields[header] : "";
+  });
+  sheet.appendRow(row);
 }
 
 function clearSingletonGroup_(sheet, groupId) {
   if (!groupId) return;
   const members = findGroupRows_(sheet, groupId);
   if (members.length === 1) {
-    sheet.getRange(members[0], 6, 1, 2).clearContent();
+    setArticleFields_(sheet, members[0], { group_id: "", group_name: "" });
   }
 }
 
 function findGroupRows_(sheet, groupId) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  const rows = sheet.getRange(2, 6, lastRow - 1, 1).getValues();
+  const rows = sheet.getRange(2, headerColumn_(sheet, "group_id"), lastRow - 1, 1).getValues();
   const members = [];
   rows.forEach(function (row, index) {
     if (String(row[0] || "") === groupId) members.push(index + 2);
@@ -355,7 +587,7 @@ function countGroupMembers_(sheet, groupId) {
 function findArticleRow_(sheet, barcode) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return -1;
-  const match = sheet.getRange(2, 1, lastRow - 1, 1)
+  const match = sheet.getRange(2, headerColumn_(sheet, "barcode"), lastRow - 1, 1)
     .createTextFinder(String(barcode))
     .matchEntireCell(true)
     .findNext();
@@ -365,7 +597,7 @@ function findArticleRow_(sheet, barcode) {
 function hasMovement_(sheet, id) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return false;
-  return Boolean(sheet.getRange(2, 1, lastRow - 1, 1)
+  return Boolean(sheet.getRange(2, headerColumn_(sheet, "id"), lastRow - 1, 1)
     .createTextFinder(String(id))
     .matchEntireCell(true)
     .findNext());

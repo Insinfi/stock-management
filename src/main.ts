@@ -7,10 +7,30 @@ import { GroupsFeature } from "./features/groups/GroupsFeature";
 import { scannerFeature } from "./features/scanner/ScannerFeature";
 import { StockFeature } from "./features/stock/StockFeature";
 import { SyncFeature } from "./features/sync/SyncFeature";
-import type { Article, StockCommand } from "./types";
+import type { Article, GroupsFeatureViewState, StockCommand } from "./types";
 import "./styles.css";
 
 type Screen = "stock" | "scan";
+
+interface NavigationSnapshot {
+  screen: Screen;
+  search: string;
+  scanSearch: string;
+  selectedBarcode: string;
+  creatingArticle: boolean;
+  generatedBarcode: boolean;
+  generatedBarcodeSvg: string;
+  creationDraft: { name: string; quantity: string };
+  editingArticle: boolean;
+  articleDraft?: { name: string; barcode: string };
+  groupState: GroupsFeatureViewState;
+}
+
+interface StockroomHistoryState {
+  stockroom: true;
+  guard?: boolean;
+  snapshot: NavigationSnapshot;
+}
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("The app root element is missing.");
@@ -41,6 +61,7 @@ let language: Language =
     : navigator.language.toLowerCase().startsWith("fr")
       ? "fr"
       : "en";
+let navigationReady = false;
 
 const syncFeature = new SyncFeature({
   getEndpoint: () => endpoint,
@@ -56,11 +77,14 @@ const groupsFeature = new GroupsFeature({
   setNotice: (value) => { notice = value; },
   t,
   render,
+  replaceNavigation: replaceCurrentNavigationState,
   refreshLocalData,
   synchronize: () => syncFeature.synchronize()
 });
 
 const stockFeature = new StockFeature({
+  getEndpoint: () => endpoint,
+  isOnline: () => navigator.onLine,
   getArticles: () => articles,
   getSelectedBarcode: () => selectedBarcode,
   setSelectedBarcode: (value) => { selectedBarcode = value; },
@@ -78,6 +102,7 @@ const stockFeature = new StockFeature({
   t,
   formatNumber,
   render,
+  replaceNavigation: replaceCurrentNavigationState,
   refreshLocalData,
   synchronize: () => syncFeature.synchronize(),
   stopScanner: () => scannerFeature.stop(),
@@ -176,6 +201,7 @@ function renderSettings(): string {
 }
 
 function render(): void {
+  syncNavigationState();
   document.documentElement.lang = language;
   document.title = t("documentTitle");
   document.querySelector<HTMLMetaElement>('meta[name="description"]')?.setAttribute("content", t("description"));
@@ -245,6 +271,7 @@ function render(): void {
       ${document.querySelector(".settings-dialog") ? renderSettings() : ""}
     </div>
   `;
+  void stockFeature.loadPhotos();
   const searchInput = focusedSearchName
     ? appRoot.querySelector<HTMLInputElement>(`input[name="${focusedSearchName}"]`)
     : null;
@@ -254,6 +281,103 @@ function render(): void {
     searchInput.setSelectionRange(cursor, cursor);
   }
 }
+
+function captureNavigationSnapshot(): NavigationSnapshot {
+  return {
+    screen,
+    search,
+    scanSearch,
+    selectedBarcode,
+    creatingArticle,
+    generatedBarcode,
+    generatedBarcodeSvg,
+    creationDraft: { ...creationDraft },
+    editingArticle,
+    articleDraft: articleDraft ? { ...articleDraft } : undefined,
+    groupState: groupsFeature.viewState
+  };
+}
+
+function navigationKey(snapshot: NavigationSnapshot): string {
+  const group = snapshot.groupState;
+  return JSON.stringify([
+    snapshot.screen,
+    snapshot.selectedBarcode,
+    snapshot.creatingArticle,
+    snapshot.editingArticle,
+    group.activeGroupId,
+    group.selectingMembers,
+    group.targetGroupId
+  ]);
+}
+
+function isStockOverview(snapshot: NavigationSnapshot): boolean {
+  return snapshot.screen === "stock" &&
+    !snapshot.selectedBarcode &&
+    !snapshot.creatingArticle &&
+    !snapshot.editingArticle &&
+    !snapshot.groupState.activeGroupId &&
+    !snapshot.groupState.selectingMembers;
+}
+
+function syncNavigationState(): void {
+  if (!navigationReady) return;
+  const snapshot = captureNavigationSnapshot();
+  const current = history.state as StockroomHistoryState | null;
+  if (current?.stockroom && navigationKey(current.snapshot) === navigationKey(snapshot)) {
+    history.replaceState({ ...current, snapshot }, "");
+    return;
+  }
+  history.pushState({ stockroom: true, snapshot }, "");
+}
+
+function replaceCurrentNavigationState(): void {
+  if (!navigationReady) return;
+  history.replaceState({ stockroom: true, snapshot: captureNavigationSnapshot() }, "");
+}
+
+function initializeNavigation(): void {
+  const snapshot = captureNavigationSnapshot();
+  const state: StockroomHistoryState = { stockroom: true, snapshot };
+  history.replaceState(state, "");
+  history.pushState({ ...state, guard: true }, "");
+  navigationReady = true;
+}
+
+function restoreNavigationSnapshot(snapshot: NavigationSnapshot): void {
+  scanner.stop();
+  screen = snapshot.screen;
+  search = snapshot.search;
+  scanSearch = snapshot.scanSearch;
+  selectedBarcode = snapshot.selectedBarcode;
+  creatingArticle = snapshot.creatingArticle;
+  generatedBarcode = snapshot.generatedBarcode;
+  generatedBarcodeSvg = snapshot.generatedBarcodeSvg;
+  creationDraft = { ...snapshot.creationDraft };
+  editingArticle = snapshot.editingArticle;
+  articleDraft = snapshot.articleDraft ? { ...snapshot.articleDraft } : undefined;
+  groupsFeature.restore(snapshot.groupState);
+  notice = "";
+  render();
+  if (isLiveScannerScreen()) void startScanner();
+}
+
+window.addEventListener("popstate", (event: PopStateEvent) => {
+  const state = event.state as StockroomHistoryState | null;
+  if (!state?.stockroom) {
+    const snapshot = captureNavigationSnapshot();
+    history.pushState({ stockroom: true, guard: true, snapshot }, "");
+    return;
+  }
+  if (state.guard) {
+    history.back();
+    return;
+  }
+  restoreNavigationSnapshot(state.snapshot);
+  if (isStockOverview(state.snapshot)) {
+    history.pushState({ stockroom: true, guard: true, snapshot: state.snapshot }, "");
+  }
+});
 
 async function refreshLocalData(): Promise<void> {
   [articles, pendingCommands] = await Promise.all([getArticles(), getQueue()]);
@@ -314,7 +438,10 @@ async function handleClick(event: MouseEvent): Promise<void> {
   const action = target.closest<HTMLElement>("[data-action]")?.dataset.action;
   if (!action) return;
 
-  if (await scanner.handleAction(target, appRoot, t)) {
+  if (action === "close-group" || action === "cancel-group-selection") {
+    history.back();
+    return;
+  } else if (await scanner.handleAction(target, appRoot, t)) {
     return;
   } else if (await groupsFeature.handleAction(action, target)) {
     return;
@@ -415,7 +542,9 @@ appRoot.addEventListener("input", (event) => {
 });
 appRoot.addEventListener("change", (event) => {
   const target = event.target;
-  if (target instanceof HTMLInputElement && target.hasAttribute("data-group-member-checkbox")) {
+  if (target instanceof HTMLInputElement && target.hasAttribute("data-article-photo")) {
+    void stockFeature.handlePhotoChange(target);
+  } else if (target instanceof HTMLInputElement && target.hasAttribute("data-group-member-checkbox")) {
     groupsFeature.toggleMember(target.dataset.barcode ?? "", target.checked);
     render();
   }
@@ -445,6 +574,7 @@ window.addEventListener("keydown", (event) => {
 async function start(): Promise<void> {
   try {
     await refreshLocalData();
+    initializeNavigation();
     render();
     if (endpoint && navigator.onLine) void syncFeature.synchronize();
   } catch (error) {

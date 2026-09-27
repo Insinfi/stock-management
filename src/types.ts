@@ -5,6 +5,8 @@ export interface Article {
   updatedAt: string;
   groupId?: string;
   groupName?: string;
+  photoFileId?: string;
+  photoDataUrl?: string;
 }
 
 export interface GroupsFeatureViewState {
@@ -59,6 +61,13 @@ export type StockCommand =
       kind: "remove-group-member";
       groupId: string;
       barcode: string;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      kind: "set-photo";
+      barcode: string;
+      photoDataUrl: string;
       createdAt: string;
     };
 

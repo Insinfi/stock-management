@@ -31,7 +31,7 @@ function frameRequest<T>(
     };
 
     const onMessage = (event: MessageEvent<ApiResult<T> & { nonce?: string }>) => {
-      if (event.source !== frame.contentWindow) return;
+      // Apps Script may deliver the response through a sandboxed frame, so WindowProxy identity is unreliable.
       if (event.data?.nonce !== nonce) return;
       if (completed) return;
       completed = true;

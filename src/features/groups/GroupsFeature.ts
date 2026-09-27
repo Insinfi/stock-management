@@ -38,6 +38,15 @@ export class GroupsFeature {
     this.stopSelecting();
   }
 
+  restore(state: GroupsFeatureViewState): void {
+    this.activeGroupId = state.activeGroupId;
+    this.selectingMembers = state.selectingMembers;
+    this.targetGroupId = state.targetGroupId;
+    this.selectedBarcodes.clear();
+    state.selectedBarcodes.forEach((barcode) => this.selectedBarcodes.add(barcode));
+    this.groupNameDraft = state.groupNameDraft;
+  }
+
   toggleMember(barcode: string, selected: boolean): void {
     if (!this.selectingMembers) return;
     if (selected) this.selectedBarcodes.add(barcode);

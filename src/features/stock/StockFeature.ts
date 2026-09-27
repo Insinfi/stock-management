@@ -65,7 +65,10 @@ export class StockFeature {
         const photo = await this.getPhoto(fileId);
         this.renderPhoto(fileId, photo);
         const article = c.getArticles().find((item) => item.photoFileId === fileId);
-        if (article) await cacheArticlePhoto(article.barcode, photo);
+        if (article) {
+          await cacheArticlePhoto(article.barcode, photo);
+          await c.refreshLocalData();
+        }
       } catch (error) {
         console.warn("Could not load an article photo.", error);
       }
@@ -114,7 +117,7 @@ export class StockFeature {
         : "article-symbol article-thumbnail";
       image.src = source;
       image.alt = placeholder.dataset.photoAlt ?? "";
-      image.loading = variant === "detail" ? "eager" : "lazy";
+      image.loading = "eager";
       if (variant !== "detail") image.setAttribute("aria-hidden", "true");
       const fallback = placeholder.cloneNode(true);
       image.addEventListener("error", () => {

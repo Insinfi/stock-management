@@ -125,6 +125,7 @@ export function renderStockScreen(options: StockScreenOptions, { t, escapeHtml, 
       </label>
       <div class="article-list">${articleList}</div>
       ${!endpoint ? `<p class="local-note">${t("localNote")}</p>` : ""}
+      <footer class="build-version">${t("buildVersion", { version: __APP_VERSION__ })}</footer>
     </section>
   `;
 }

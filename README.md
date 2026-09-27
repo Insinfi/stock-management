@@ -16,6 +16,7 @@ For handmade items without a manufacturer barcode, choose **Create a handmade ar
 ## Deploy on GitHub Pages
 
 The GitHub Actions workflow publishes the production PWA to `https://insinfi.github.io/stock-management/` whenever changes are pushed to `main`, or when run manually. In the repository settings, set **Pages → Build and deployment → Source** to **GitHub Actions**. Once the first deployment succeeds, install the app from that Pages URL; unlike the development tunnel, it stays available when your PC is off.
+The stock list footer displays the short Git commit SHA used to build the deployed version. Local development builds display `dev`.
 
 ## Connect a Google Sheet
 

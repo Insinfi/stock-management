@@ -14,6 +14,7 @@
   "totalUnits": "Total units on hand",
   "articles": "Articles",
   "allArticles": "All articles",
+  "buildVersion": "Build {version}",
   "groupItems": "Group items",
   "selectedGroupItems": "{count} selected",
   "groupName": "Group name",

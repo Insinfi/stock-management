@@ -65,6 +65,7 @@ export function renderArticleSelection(
         <label class="field-label">${t("barcode")}
           <input name="barcode" required maxlength="160" value="${escapeHtml(articleDraft?.barcode ?? article.barcode)}" />
         </label>
+        ${renderPhoto(article, { t, escapeHtml }, true)}
         <button class="primary-button" type="submit">${t("saveArticleChanges")}</button>
         <button class="secondary-button" type="button" data-action="cancel-article-edit">${t("cancel")}</button>
         <button class="danger-button" type="button" data-action="delete-article" data-barcode="${escapeHtml(article.barcode)}">${t("deleteArticle")}</button>
@@ -79,6 +80,7 @@ export function renderArticleSelection(
         <button class="detail-edit-button" type="button" data-action="edit-article" aria-label="${escapeHtml(t("editArticle"))}">✎ ${t("editArticle")}</button>
       </div>
       <p class="barcode-display">${t("barcode")} <strong>${escapeHtml(article.barcode)}</strong></p>
+      ${renderPhoto(article, { t, escapeHtml }, false)}
       <div class="current-stock"><span>${t("currentStock")}</span><strong>${formatNumber(article.quantity)} <small>${t("units")}</small></strong></div>
       <div class="movement-choice" role="group" aria-label="${t("movementType")}">
         <label class="choice-card choice-add">
@@ -99,5 +101,34 @@ export function renderArticleSelection(
       <button class="secondary-button" type="button" data-action="cancel-selection">${t("scanAnother")}</button>
       <button class="danger-button" type="button" data-action="delete-article" data-barcode="${escapeHtml(article.barcode)}">${t("deleteArticle")}</button>
     </form>
+  `;
+}
+
+function renderPhoto(
+  article: Article,
+  { t, escapeHtml }: Pick<ViewContext, "t" | "escapeHtml">,
+  canChange: boolean
+): string {
+  const source = article.photoDataUrl ??
+    (article.photoFileId
+      ? `https://drive.google.com/uc?export=view&id=${encodeURIComponent(article.photoFileId)}`
+      : "");
+  return `
+    <div class="article-photo-section">
+      ${source
+        ? `<img class="article-photo" src="${escapeHtml(source)}" alt="${escapeHtml(t("articlePhotoAlt", { name: article.name }))}" loading="lazy" />`
+        : `<p class="article-photo-empty">${t("noArticlePhoto")}</p>`}
+      ${canChange ? `
+        <div class="article-photo-actions">
+          <label class="secondary-button photo-picker-button">${t("takePhoto")}
+            <input type="file" accept="image/*" capture="environment" data-article-photo data-barcode="${escapeHtml(article.barcode)}" aria-label="${escapeHtml(t("takePhoto"))}" />
+          </label>
+          <label class="secondary-button photo-picker-button">${t("choosePhoto")}
+            <input type="file" accept="image/*" data-article-photo data-barcode="${escapeHtml(article.barcode)}" aria-label="${escapeHtml(t("choosePhoto"))}" />
+          </label>
+        </div>
+        <p class="photo-help">${t("photoStoredInDrive")}</p>
+      ` : ""}
+    </div>
   `;
 }

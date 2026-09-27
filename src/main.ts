@@ -415,7 +415,9 @@ appRoot.addEventListener("input", (event) => {
 });
 appRoot.addEventListener("change", (event) => {
   const target = event.target;
-  if (target instanceof HTMLInputElement && target.hasAttribute("data-group-member-checkbox")) {
+  if (target instanceof HTMLInputElement && target.hasAttribute("data-article-photo")) {
+    void stockFeature.handlePhotoChange(target);
+  } else if (target instanceof HTMLInputElement && target.hasAttribute("data-group-member-checkbox")) {
     groupsFeature.toggleMember(target.dataset.barcode ?? "", target.checked);
     render();
   }

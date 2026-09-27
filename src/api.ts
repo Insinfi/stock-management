@@ -94,7 +94,8 @@ export class StockApi {
         value.quantity < 0 ||
         typeof value.updatedAt !== "string" ||
         (value.groupId !== undefined && (typeof value.groupId !== "string" || !value.groupId.trim())) ||
-        (value.groupName !== undefined && (typeof value.groupName !== "string" || !value.groupName.trim()))
+        (value.groupName !== undefined && (typeof value.groupName !== "string" || !value.groupName.trim())) ||
+        (value.photoFileId !== undefined && (typeof value.photoFileId !== "string" || !/^[\w-]{10,200}$/.test(value.photoFileId)))
       ) {
         throw new Error("The stock service returned invalid article data.");
       }
@@ -122,6 +123,7 @@ export class StockApi {
       } else if (value.groupId || value.groupName) {
         throw new Error("The stock service returned incomplete group data.");
       }
+      if (value.photoFileId) article.photoFileId = value.photoFileId;
       return article;
     });
     const barcodes = new Set<string>();

@@ -1,4 +1,10 @@
-import { commitArticleDelete, commitArticleUpdate, commitMovement, commitNewArticle } from "../../db";
+import {
+  commitArticleDelete,
+  commitArticlePhoto,
+  commitArticleUpdate,
+  commitMovement,
+  commitNewArticle
+} from "../../db";
 import type { Article, StockCommand } from "../../types";
 import type { TranslationKey } from "../../i18n";
 
@@ -141,6 +147,40 @@ export class StockFeature {
       return false;
     }
     return true;
+  }
+
+  async handlePhotoChange(input: HTMLInputElement): Promise<void> {
+    const barcode = input.dataset.barcode;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!barcode || !file) return;
+    try {
+      const c = this.context;
+      const article = c.getArticles().find((item) => item.barcode === barcode);
+      if (!article) throw new Error(c.t("articleMissing"));
+      const photoDataUrl = await compressPhoto(file, c.t);
+      const updated: Article = {
+        ...article,
+        photoDataUrl,
+        updatedAt: new Date().toISOString()
+      };
+      const command: StockCommand = {
+        id: crypto.randomUUID(),
+        kind: "set-photo",
+        barcode,
+        photoDataUrl,
+        createdAt: updated.updatedAt
+      };
+      await commitArticlePhoto(updated, command);
+      await c.refreshLocalData();
+      c.setNotice(c.t("photoSaved"));
+      c.render();
+      void c.synchronize();
+    } catch (error) {
+      const c = this.context;
+      c.setNotice(error instanceof Error ? error.message : c.t("photoProcessingFailed"));
+      c.render();
+    }
   }
 
   private quantityInput(form: HTMLFormElement): number {
@@ -312,5 +352,40 @@ export class StockFeature {
       c.setNotice(c.t("barcodeGenerationFailed"));
       c.render();
     }
+  }
+}
+
+async function compressPhoto(file: File, t: Translate): Promise<string> {
+  if (!file.type.startsWith("image/")) throw new Error(t("photoProcessingFailed"));
+  const bitmap = await createImageBitmap(file);
+  try {
+    const maxDimension = 1200;
+    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error(t("photoProcessingFailed"));
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (result) => result
+          ? resolve(result)
+          : reject(new Error(t("photoProcessingFailed"))),
+        "image/jpeg",
+        0.72
+      );
+    });
+    if (blob.size > 450_000) throw new Error(t("photoTooLarge"));
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => typeof reader.result === "string"
+        ? resolve(reader.result)
+        : reject(new Error(t("photoProcessingFailed")));
+      reader.onerror = () => reject(reader.error ?? new Error(t("photoProcessingFailed")));
+      reader.readAsDataURL(blob);
+    });
+  } finally {
+    bitmap.close();
   }
 }

@@ -179,6 +179,17 @@ export async function commitGroupChange(
   });
 }
 
+export async function commitArticlePhoto(
+  article: Article,
+  command: StockCommand
+): Promise<void> {
+  await transaction([ARTICLES, QUEUE, META], async (tx) => {
+    const sequence = await nextQueueSequence(tx);
+    tx.objectStore(ARTICLES).put(article);
+    tx.objectStore(QUEUE).add({ ...command, sequence });
+  });
+}
+
 export async function removeCommand(id: string): Promise<void> {
   await transaction([QUEUE], async (tx) => {
     tx.objectStore(QUEUE).delete(id);

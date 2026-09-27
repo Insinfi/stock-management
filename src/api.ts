@@ -79,6 +79,7 @@ export class StockApi {
   async getStock(): Promise<Article[]> {
     const stock = await frameRequest<unknown>(this.endpoint, { action: "getStock" }, "GET");
     if (!Array.isArray(stock)) throw new Error("The stock service returned invalid article data.");
+    const groupNames = new Map<string, string>();
     const articles = stock.map((value): Article => {
       if (
         !value ||
@@ -91,16 +92,37 @@ export class StockApi {
         value.name.length > 120 ||
         !Number.isSafeInteger(value.quantity) ||
         value.quantity < 0 ||
-        typeof value.updatedAt !== "string"
+        typeof value.updatedAt !== "string" ||
+        (value.groupId !== undefined && (typeof value.groupId !== "string" || !value.groupId.trim())) ||
+        (value.groupName !== undefined && (typeof value.groupName !== "string" || !value.groupName.trim()))
       ) {
         throw new Error("The stock service returned invalid article data.");
       }
-      return {
+      const article: Article = {
         barcode: value.barcode,
         name: value.name,
         quantity: value.quantity,
         updatedAt: value.updatedAt
       };
+      if (value.groupId && value.groupName) {
+        if (
+          value.groupId.length > 80 ||
+          !/^[\w-]{8,80}$/.test(value.groupId) ||
+          value.groupName.length > 120
+        ) {
+          throw new Error("The stock service returned invalid group data.");
+        }
+        const existingGroupName = groupNames.get(value.groupId);
+        if (existingGroupName && existingGroupName !== value.groupName) {
+          throw new Error("The stock service returned inconsistent group data.");
+        }
+        groupNames.set(value.groupId, value.groupName);
+        article.groupId = value.groupId;
+        article.groupName = value.groupName;
+      } else if (value.groupId || value.groupName) {
+        throw new Error("The stock service returned incomplete group data.");
+      }
+      return article;
     });
     const barcodes = new Set<string>();
     for (const article of articles) {

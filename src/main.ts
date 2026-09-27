@@ -3,6 +3,7 @@ import { renderScanScreen } from "./views/scan/ScanScreen";
 import { renderStockScreen } from "./views/stock/StockScreen";
 import type { ViewContext } from "./views/view-context";
 import { getArticles, getQueue } from "./db";
+import { GroupsFeature } from "./features/groups/GroupsFeature";
 import { scannerFeature } from "./features/scanner/ScannerFeature";
 import { StockFeature } from "./features/stock/StockFeature";
 import { SyncFeature } from "./features/sync/SyncFeature";
@@ -48,6 +49,15 @@ const syncFeature = new SyncFeature({
   t,
   refreshLocalData,
   renderSyncUpdate
+});
+
+const groupsFeature = new GroupsFeature({
+  getArticles: () => articles,
+  setNotice: (value) => { notice = value; },
+  t,
+  render,
+  refreshLocalData,
+  synchronize: () => syncFeature.synchronize()
 });
 
 const stockFeature = new StockFeature({
@@ -182,7 +192,15 @@ function render(): void {
   const current =
     screen === "stock"
       ? renderStockScreen(
-          { articles, search, pendingCommands, syncing: syncFeature.isSyncing, endpoint, online: navigator.onLine },
+          {
+            articles,
+            search,
+            pendingCommands,
+            syncing: syncFeature.isSyncing,
+            endpoint,
+            online: navigator.onLine,
+            groupState: groupsFeature.viewState
+          },
           viewContext
         )
       : renderScanScreen(
@@ -265,7 +283,7 @@ async function handleSubmit(event: SubmitEvent): Promise<void> {
   event.preventDefault();
   try {
     const kind = form.dataset.form;
-    if (await stockFeature.handleSubmit(form)) {
+    if (await groupsFeature.handleSubmit(form) || await stockFeature.handleSubmit(form)) {
       return;
     } else if (kind === "lookup") {
       const barcode = String(new FormData(form).get("barcode") ?? "").trim();
@@ -298,10 +316,13 @@ async function handleClick(event: MouseEvent): Promise<void> {
 
   if (await scanner.handleAction(target, appRoot, t)) {
     return;
+  } else if (await groupsFeature.handleAction(action, target)) {
+    return;
   } else if (await stockFeature.handleAction(action, target)) {
     return;
   } else if (action === "stock" || action === "scan") {
     scanner.stop();
+    groupsFeature.reset();
     screen = action;
     selectedBarcode = "";
     creatingArticle = false;
@@ -386,8 +407,17 @@ appRoot.addEventListener("input", (event) => {
     scanner.stop();
     render();
     if (!scanSearch.trim()) void startScanner();
+  } else if (target instanceof HTMLInputElement && target.name === "groupName") {
+    groupsFeature.updateGroupName(target.value);
   } else if (target instanceof HTMLInputElement) {
     stockFeature.handleInput(target);
+  }
+});
+appRoot.addEventListener("change", (event) => {
+  const target = event.target;
+  if (target instanceof HTMLInputElement && target.hasAttribute("data-group-member-checkbox")) {
+    groupsFeature.toggleMember(target.dataset.barcode ?? "", target.checked);
+    render();
   }
 });
 window.addEventListener("online", () => {

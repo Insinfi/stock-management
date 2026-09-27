@@ -1,7 +1,7 @@
 # Stockroom
 
 Stockroom is a mobile-first, installable stock manager. It stores articles and an ordered movement queue in IndexedDB, so scanning and stock changes continue to work offline. When configured and online, it syncs the queue to a Google Sheet through a bound Google Apps Script web app.
-The interface is available in English and French; the language can be changed from the top bar and is remembered on the device. Translation strings live in `src/locales/en.json` and `src/locales/fr.json`; `src/i18n.ts` provides the typed lookup helper. Screen templates are separated into `src/views/stock/` and `src/views/scan/`, with the scan article form in its own component. Feature behavior lives in `src/features/`: camera and flashlight behavior, article management and stock movements, and cloud synchronization each have a dedicated module.
+The interface is available in English and French; the language can be changed from the top bar and is remembered on the device. Translation strings live in `src/locales/en.json` and `src/locales/fr.json`; `src/i18n.ts` provides the typed lookup helper. Screen templates are separated into `src/views/stock/` and `src/views/scan/`, with the scan article form in its own component. Feature behavior lives in `src/features/`: camera and flashlight behavior, article management and stock movements, item grouping, and cloud synchronization each have a dedicated module.
 
 ## Run the app
 
@@ -20,12 +20,12 @@ The GitHub Actions workflow publishes the production PWA to `https://insinfi.git
 ## Connect a Google Sheet
 
 1. Create a Google Sheet and open **Extensions → Apps Script**.
-2. Replace the editor contents with `apps-script/Code.gs`, then save. The script creates the `Articles` and `Movements` tabs and their headers during setup. If updating an existing deployment, choose **Deploy → Manage deployments**, edit it, select **New version**, and deploy so edits and deletions are supported by the server.
-3. In the Apps Script editor, select and run `setupStockroom` once, then approve the requested Sheets permission. This saves the spreadsheet ID so web-app requests can reopen it reliably.
+2. Replace the editor contents with `apps-script/Code.gs`, then save. The script creates the `Articles` and `Movements` tabs and their headers during setup. If updating an existing deployment, choose **Deploy → Manage deployments**, edit it, select **New version**, and deploy so edits, deletions, and groups are supported by the server.
+3. In the Apps Script editor, select and run `setupStockroom` once, then approve the requested Sheets permission. This saves the spreadsheet ID so web-app requests can reopen it reliably; the new script adds the group columns to an existing `Articles` tab without changing existing stock.
 4. Select **Deploy → New deployment → Web app**. Choose an execution identity and restrict access to your account or organization whenever possible. Deploy and copy the URL ending in `/exec`.
 5. In Stockroom, open the gear icon, paste the deployment URL, and save. The app will sync when online; use **Sync** on the stock screen to retry or refresh.
 
-The `Articles` tab keeps the current quantity and last applied command ID. `Movements` is the append-only audit history, including opening quantities, edits, and deletions. Commands have stable IDs and the script serializes writes with a lock, so retrying a queued request does not apply it twice.
+The `Articles` tab keeps the current quantity, last applied command ID, and optional group ID/name. `Movements` is the append-only audit history, including opening quantities, edits, deletions, and group changes. Commands have stable IDs and the script serializes writes with a lock, so retrying a queued request does not apply it twice. A group combines items only in the stock list: each barcode retains its own quantity and can still be scanned as before.
 The PWA talks to Apps Script through a hidden iframe/form bridge, avoiding cross-origin `fetch` limitations on Apps Script responses.
 
 ### Access and data notes

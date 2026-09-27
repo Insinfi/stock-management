@@ -3,6 +3,16 @@ export interface Article {
   name: string;
   quantity: number;
   updatedAt: string;
+  groupId?: string;
+  groupName?: string;
+}
+
+export interface GroupsFeatureViewState {
+  activeGroupId?: string;
+  selectingMembers: boolean;
+  targetGroupId?: string;
+  selectedBarcodes: string[];
+  groupNameDraft: string;
 }
 
 export type StockCommand =
@@ -33,6 +43,21 @@ export type StockCommand =
   | {
       id: string;
       kind: "delete";
+      barcode: string;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      kind: "set-group";
+      groupId: string;
+      groupName: string;
+      barcodes: string[];
+      createdAt: string;
+    }
+  | {
+      id: string;
+      kind: "remove-group-member";
+      groupId: string;
       barcode: string;
       createdAt: string;
     };

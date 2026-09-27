@@ -153,7 +153,28 @@ export async function commitArticleUpdate(
 export async function commitArticleDelete(barcode: string, command: StockCommand): Promise<void> {
   await transaction([ARTICLES, QUEUE, META], async (tx) => {
     const sequence = await nextQueueSequence(tx);
-    tx.objectStore(ARTICLES).delete(barcode);
+    const articles = tx.objectStore(ARTICLES);
+    const deleted = await requestResult<Article | undefined>(articles.get(barcode));
+    articles.delete(barcode);
+    if (deleted?.groupId) {
+      const members = await requestResult<Article[]>(articles.getAll());
+      const remaining = members.filter((article) => article.groupId === deleted.groupId);
+      if (remaining.length === 1) {
+        articles.put({ ...remaining[0], groupId: undefined, groupName: undefined });
+      }
+    }
+    tx.objectStore(QUEUE).add({ ...command, sequence });
+  });
+}
+
+export async function commitGroupChange(
+  articles: Article[],
+  command: StockCommand
+): Promise<void> {
+  await transaction([ARTICLES, QUEUE, META], async (tx) => {
+    const sequence = await nextQueueSequence(tx);
+    const store = tx.objectStore(ARTICLES);
+    for (const article of articles) store.put(article);
     tx.objectStore(QUEUE).add({ ...command, sequence });
   });
 }
